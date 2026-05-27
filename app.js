@@ -1480,18 +1480,36 @@ function handleItemImageUpload(input) {
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
     showLoading('กำลังอัปโหลดรูป...');
-    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
-      hideLoading();
-      if (res.success) {
-        _itemImageFileId = res.file_id;
-        var preview = document.getElementById('itemImagePreview');
-        var imgSrc = imgUrl(res.file_id);
-        if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
-        showSuccess('อัปโหลดรูปเรียบร้อย');
-      } else {
-        showError(res.message || 'อัปโหลดไม่สำเร็จ');
-      }
-    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    // Get drive folder ID from config
+    callAPI('getConfig', AUTH.token).then(function(cfgRes) {
+      var folderId = (cfgRes.data && cfgRes.data.drive_folder_id) || '';
+      callAPI('uploadFile', AUTH.token, base64, file.type, file.name, folderId).then(function(res) {
+        hideLoading();
+        if (res.success) {
+          _itemImageFileId = res.file_id;
+          var preview = document.getElementById('itemImagePreview');
+          var imgSrc = imgUrl(res.file_id);
+          if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+          showSuccess('อัปโหลดรูปเรียบร้อย');
+        } else {
+          showError(res.message || 'อัปโหลดไม่สำเร็จ');
+        }
+      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    }).catch(function() {
+      // Fallback without folder ID if config fails
+      callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+        hideLoading();
+        if (res.success) {
+          _itemImageFileId = res.file_id;
+          var preview = document.getElementById('itemImagePreview');
+          var imgSrc = imgUrl(res.file_id);
+          if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+          showSuccess('อัปโหลดรูปเรียบร้อย');
+        } else {
+          showError(res.message || 'อัปโหลดไม่สำเร็จ');
+        }
+      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    });
   };
   reader.readAsDataURL(file);
 }
