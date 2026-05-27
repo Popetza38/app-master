@@ -38,6 +38,317 @@ function initLoginParticles() {
   }
 }
 
+// ===== BACKGROUND LOADING MANAGER =====
+var BackgroundLoader = {
+  cache: {},
+  loadingQueue: [],
+  isLoading: false,
+  maxRetries: 3,
+  retryDelay: 1000,
+  
+  // Load data with caching and retry
+  load: function(key, loaderFn, forceRefresh) {
+    var self = this;
+    var cached = this.cache[key];
+    
+    // Return cached data if valid
+    if (!forceRefresh && cached && cached.data && (Date.now() - cached.timestamp) < cached.ttl) {
+      return Promise.resolve(cached.data);
+    }
+    
+    // Add to queue if already loading
+    if (this.loadingQueue.indexOf(key) !== -1) {
+      return new Promise(function(resolve) {
+        var checkInterval = setInterval(function() {
+          if (self.loadingQueue.indexOf(key) === -1) {
+            clearInterval(checkInterval);
+            resolve(self.cache[key].data);
+          }
+        }, 100);
+      });
+    }
+    
+    // Start loading
+    this.loadingQueue.push(key);
+    return this._loadWithRetry(loaderFn, 0).then(function(data) {
+      self.cache[key] = {
+        data: data,
+        timestamp: Date.now(),
+        ttl: 60000 // 1 minute cache
+      };
+      var idx = self.loadingQueue.indexOf(key);
+      if (idx !== -1) self.loadingQueue.splice(idx, 1);
+      return data;
+    }).catch(function(error) {
+      var idx = self.loadingQueue.indexOf(key);
+      if (idx !== -1) self.loadingQueue.splice(idx, 1);
+      throw error;
+    });
+  },
+  
+  // Load with retry mechanism
+  _loadWithRetry: function(loaderFn, retryCount) {
+    var self = this;
+    return loaderFn().catch(function(error) {
+      if (retryCount < self.maxRetries) {
+        return new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve(self._loadWithRetry(loaderFn, retryCount + 1));
+          }, self.retryDelay * (retryCount + 1));
+        });
+      }
+      throw error;
+    });
+  },
+  
+  // Preload multiple data sources
+  preload: function(loaders) {
+    var self = this;
+    var promises = [];
+    var results = {};
+    
+    Object.keys(loaders).forEach(function(key) {
+      promises.push(
+        self.load(key, loaders[key]).then(function(data) {
+          results[key] = data;
+        }).catch(function(error) {
+          results[key] = { error: error };
+        })
+      );
+    });
+    
+    return Promise.all(promises).then(function() {
+      return results;
+    });
+  },
+  
+  // Clear cache
+  clearCache: function(key) {
+    if (key) {
+      delete this.cache[key];
+    } else {
+      this.cache = {};
+    }
+  },
+  
+  // Get loading status
+  isLoadingKey: function(key) {
+    return this.loadingQueue.indexOf(key) !== -1;
+  }
+};
+
+// ===== DATA LOADERS WITH BACKGROUND LOADING =====
+// Load items with background loading
+function loadItemsBackground(forceRefresh) {
+  return BackgroundLoader.load('items', function() {
+    return callAPI('getItems', AUTH.token);
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      _itemsData = res.data || [];
+      _itemsCacheTime = Date.now();
+      updateLowStockBadge(_itemsData);
+      return _itemsData;
+    }
+    throw new Error(res.message || 'Failed to load items');
+  });
+}
+
+// Load stock data with background loading
+function loadStockBackground(forceRefresh) {
+  return BackgroundLoader.load('stock', function() {
+    return callAPI('getItems', AUTH.token);
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      _itemsData = res.data || [];
+      _stockData = res.data || [];
+      _itemsCacheTime = Date.now();
+      updateLowStockBadge(_itemsData);
+      return _stockData;
+    }
+    throw new Error(res.message || 'Failed to load stock');
+  });
+}
+
+// Load receives with background loading
+function loadReceivesBackground(forceRefresh) {
+  return BackgroundLoader.load('receives', function() {
+    return callAPI('getReceives', AUTH.token, {});
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      _receiveData = res.data || [];
+      return _receiveData;
+    }
+    throw new Error(res.message || 'Failed to load receives');
+  });
+}
+
+// Load withdrawals with background loading
+function loadWithdrawalsBackground(forceRefresh) {
+  return BackgroundLoader.load('withdrawals', function() {
+    return callAPI('getWithdrawals', AUTH.token, { status:'all' });
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      return res.data || [];
+    }
+    throw new Error(res.message || 'Failed to load withdrawals');
+  });
+}
+
+// Load users with background loading
+function loadUsersBackground(forceRefresh) {
+  return BackgroundLoader.load('users', function() {
+    return callAPI('getUsers', AUTH.token);
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      return res.data || [];
+    }
+    throw new Error(res.message || 'Failed to load users');
+  });
+}
+
+// Load assets with background loading
+function loadAssetsBackground(forceRefresh) {
+  return BackgroundLoader.load('assets', function() {
+    return callAPI('getAssets', AUTH.token);
+  }, forceRefresh).then(function(res) {
+    if (res.success) {
+      _assetsCache = res.data || [];
+      return _assetsCache;
+    }
+    throw new Error(res.message || 'Failed to load assets');
+  });
+}
+
+// Preload all critical data after login
+function preloadCriticalData() {
+  var loaders = {
+    items: function() { return callAPI('getItems', AUTH.token); },
+    stock: function() { return callAPI('getItems', AUTH.token); },
+    users: function() { return callAPI('getUsers', AUTH.token); }
+  };
+  
+  return BackgroundLoader.preload(loaders).then(function(results) {
+    if (results.items && results.items.success) {
+      _itemsData = results.items.data || [];
+      _itemsCacheTime = Date.now();
+      updateLowStockBadge(_itemsData);
+    }
+    if (results.stock && results.stock.success) {
+      _stockData = results.stock.data || [];
+    }
+    if (results.users && results.users.success) {
+      // Users loaded successfully
+    }
+    return results;
+  });
+}
+
+// ===== ERROR HANDLING FOR BACKGROUND LOADING =====
+var ErrorHandler = {
+  errors: {},
+  
+  // Log error
+  log: function(key, error) {
+    this.errors[key] = {
+      error: error,
+      timestamp: Date.now(),
+      retryCount: 0
+    };
+    console.error('[BackgroundLoader] Error loading ' + key + ':', error);
+  },
+  
+  // Get error for key
+  get: function(key) {
+    return this.errors[key];
+  },
+  
+  // Clear error for key
+  clear: function(key) {
+    delete this.errors[key];
+  },
+  
+  // Increment retry count
+  incrementRetry: function(key) {
+    if (this.errors[key]) {
+      this.errors[key].retryCount++;
+    }
+  },
+  
+  // Show error UI
+  showErrorUI: function(key, containerId, retryFn) {
+    var error = this.get(key);
+    if (!error) return;
+    
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    
+    var html = '<div class="bg-error-state">';
+    html += '<i class="fi fi-rr-triangle-warning bg-error-icon"></i>';
+    html += '<div>';
+    html += '<div class="font-medium">โหลดข้อมูลไม่สำเร็จ</div>';
+    html += '<div class="text-sm opacity-75">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่</div>';
+    html += '</div>';
+    if (retryFn) {
+      html += '<button class="bg-error-retry" onclick="' + retryFn + '">';
+      html += '<i class="fi fi-rr-refresh mr-1"></i> ลองใหม่';
+      html += '</button>';
+    }
+    html += '</div>';
+    
+    container.innerHTML = html;
+  },
+  
+  // Show loading UI
+  showLoadingUI: function(containerId, message) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    
+    var html = '<div class="text-center py-8">';
+    html += '<div class="inline-loading">';
+    html += '<div class="inline-loading-spinner"></div>';
+    html += '<span>' + (message || 'กำลังโหลด...') + '</span>';
+    html += '</div>';
+    html += '</div>';
+    
+    container.innerHTML = html;
+  },
+  
+  // Show skeleton UI
+  showSkeletonUI: function(containerId, type) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    
+    var html = '';
+    if (type === 'table') {
+      for (var i = 0; i < 5; i++) {
+        html += '<div class="skeleton-row"></div>';
+      }
+    } else if (type === 'card') {
+      html += '<div class="skeleton-card"></div>';
+    } else if (type === 'text') {
+      html += '<div class="skeleton-text-lg"></div>';
+      html += '<div class="skeleton-text"></div>';
+      html += '<div class="skeleton-text"></div>';
+      html += '<div class="skeleton-text-sm"></div>';
+    }
+    
+    container.innerHTML = html;
+  },
+  
+  // Show success UI
+  showSuccessUI: function(containerId, message) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    
+    var html = '<div class="bg-success-state">';
+    html += '<i class="fi fi-rr-check-circle bg-success-icon"></i>';
+    html += '<span>' + (message || 'โหลดข้อมูลสำเร็จ') + '</span>';
+    html += '</div>';
+    
+    container.innerHTML = html;
+  }
+};
+
 // ===== URL PARAMS (for QR / Public) =====
 var _QR_ACTION = '';
 var _QR_ITEM_ID = '';
@@ -204,6 +515,14 @@ function initApp() {
     localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
+    
+    // Background preload critical data
+    preloadCriticalData().then(function(results) {
+      console.log('[BackgroundLoader] Preload completed:', results);
+    }).catch(function(error) {
+      console.error('[BackgroundLoader] Preload failed:', error);
+    });
+    
     // Preload assets for global search
     if (AUTH.user.role !== 'employee') {
       _loadAssetsCache();
