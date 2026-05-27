@@ -2,19 +2,10 @@
 // API Client — Google Apps Script Backend
 // ============================================================
 
-// Use mock API for development
-var USE_MOCK_API = true;
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbySk-go7e6vSA6RpYX6LqhuaAv0hYUk1FnslpbAGXKz4xB2nf_AECM0wLADYvM8ijg9Hg/exec';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9Rkgkh45Thr7l3gPf8p4g2MPfIs3XXQwcXe0QXOQOtfcCBPScuY1kTXA5lkfQalBL7A/exec';
 
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
-  
-  // Use mock API directly if enabled
-  if (USE_MOCK_API && window._mockAPI && window._mockAPI[fnName]) {
-    console.log('[API] Using mock API for', fnName);
-    return Promise.resolve(window._mockAPI[fnName].apply(null, args));
-  }
-  
   // uploadFile ใช้ POST เพราะ base64 ใหญ่เกิน URL length limit
   if (fnName === 'uploadFile') {
     var body = 'fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args));
@@ -41,10 +32,9 @@ function callAPI(fnName) {
     console.log('[API] Data', data);
     return data;
   }).catch(function(err) {
-    console.warn('[API] Fallback to localStorage mock for', fnName, err);
-    if (window._mockAPI && window._mockAPI[fnName]) {
-      return Promise.resolve(window._mockAPI[fnName].apply(null, args));
-    }
+    console.error('[API] FAIL [' + fnName + ']:', err);
+    console.error('[API] URL:', APPS_SCRIPT_URL);
+    console.error('[API] หาก deploy code.gs ใหม่และได้ URL ใหม่ ให้แก้ APPS_SCRIPT_URL ใน api.js');
     throw err;
   });
 }

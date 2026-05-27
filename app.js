@@ -8,25 +8,20 @@
 var ITEMS_PER_PAGE = 20;
 var ROLE_LABELS = { admin:'ผู้ดูแลระบบ', staff:'เจ้าหน้าที่คลัง', employee:'พนักงาน' };
 
-// ===== LOGIN PARTICLE ANIMATION =====
+// ===== LOGIN PARTICLES ANIMATION =====
 function initLoginParticles() {
   var container = document.getElementById('login-particles');
   if (!container) return;
   
-  // Clear existing particles
-  container.innerHTML = '';
-  
-  // Create particles
-  var particleCount = 50;
+  var particleCount = 30;
   for (var i = 0; i < particleCount; i++) {
     var particle = document.createElement('div');
     particle.className = 'login-v2-particle';
     
-    // Random properties
     var size = Math.random() * 4 + 2;
     var left = Math.random() * 100;
     var duration = Math.random() * 15 + 10;
-    var delay = Math.random() * 15;
+    var delay = Math.random() * 10;
     
     particle.style.width = size + 'px';
     particle.style.height = size + 'px';
@@ -38,322 +33,10 @@ function initLoginParticles() {
   }
 }
 
-// ===== BACKGROUND LOADING MANAGER =====
-var BackgroundLoader = {
-  cache: {},
-  loadingQueue: [],
-  isLoading: false,
-  maxRetries: 3,
-  retryDelay: 1000,
-  
-  // Load data with caching and retry
-  load: function(key, loaderFn, forceRefresh) {
-    var self = this;
-    var cached = this.cache[key];
-    
-    // Return cached data if valid
-    if (!forceRefresh && cached && cached.data && (Date.now() - cached.timestamp) < cached.ttl) {
-      return Promise.resolve(cached.data);
-    }
-    
-    // Add to queue if already loading
-    if (this.loadingQueue.indexOf(key) !== -1) {
-      return new Promise(function(resolve) {
-        var checkInterval = setInterval(function() {
-          if (self.loadingQueue.indexOf(key) === -1) {
-            clearInterval(checkInterval);
-            resolve(self.cache[key].data);
-          }
-        }, 100);
-      });
-    }
-    
-    // Start loading
-    this.loadingQueue.push(key);
-    return this._loadWithRetry(loaderFn, 0).then(function(data) {
-      self.cache[key] = {
-        data: data,
-        timestamp: Date.now(),
-        ttl: 60000 // 1 minute cache
-      };
-      var idx = self.loadingQueue.indexOf(key);
-      if (idx !== -1) self.loadingQueue.splice(idx, 1);
-      return data;
-    }).catch(function(error) {
-      var idx = self.loadingQueue.indexOf(key);
-      if (idx !== -1) self.loadingQueue.splice(idx, 1);
-      throw error;
-    });
-  },
-  
-  // Load with retry mechanism
-  _loadWithRetry: function(loaderFn, retryCount) {
-    var self = this;
-    return loaderFn().catch(function(error) {
-      if (retryCount < self.maxRetries) {
-        return new Promise(function(resolve) {
-          setTimeout(function() {
-            resolve(self._loadWithRetry(loaderFn, retryCount + 1));
-          }, self.retryDelay * (retryCount + 1));
-        });
-      }
-      throw error;
-    });
-  },
-  
-  // Preload multiple data sources
-  preload: function(loaders) {
-    var self = this;
-    var promises = [];
-    var results = {};
-    
-    Object.keys(loaders).forEach(function(key) {
-      promises.push(
-        self.load(key, loaders[key]).then(function(data) {
-          results[key] = data;
-        }).catch(function(error) {
-          results[key] = { error: error };
-        })
-      );
-    });
-    
-    return Promise.all(promises).then(function() {
-      return results;
-    });
-  },
-  
-  // Clear cache
-  clearCache: function(key) {
-    if (key) {
-      delete this.cache[key];
-    } else {
-      this.cache = {};
-    }
-  },
-  
-  // Get loading status
-  isLoadingKey: function(key) {
-    return this.loadingQueue.indexOf(key) !== -1;
-  }
-};
-
-// ===== DATA LOADERS WITH BACKGROUND LOADING =====
-// Load items with background loading
-function loadItemsBackground(forceRefresh) {
-  return BackgroundLoader.load('items', function() {
-    return callAPI('getItems', AUTH.token);
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      _itemsData = res.data || [];
-      _itemsCacheTime = Date.now();
-      updateLowStockBadge(_itemsData);
-      return _itemsData;
-    }
-    throw new Error(res.message || 'Failed to load items');
-  });
-}
-
-// Load stock data with background loading
-function loadStockBackground(forceRefresh) {
-  return BackgroundLoader.load('stock', function() {
-    return callAPI('getItems', AUTH.token);
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      _itemsData = res.data || [];
-      _stockData = res.data || [];
-      _itemsCacheTime = Date.now();
-      updateLowStockBadge(_itemsData);
-      return _stockData;
-    }
-    throw new Error(res.message || 'Failed to load stock');
-  });
-}
-
-// Load receives with background loading
-function loadReceivesBackground(forceRefresh) {
-  return BackgroundLoader.load('receives', function() {
-    return callAPI('getReceives', AUTH.token, {});
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      _receiveData = res.data || [];
-      return _receiveData;
-    }
-    throw new Error(res.message || 'Failed to load receives');
-  });
-}
-
-// Load withdrawals with background loading
-function loadWithdrawalsBackground(forceRefresh) {
-  return BackgroundLoader.load('withdrawals', function() {
-    return callAPI('getWithdrawals', AUTH.token, { status:'all' });
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      return res.data || [];
-    }
-    throw new Error(res.message || 'Failed to load withdrawals');
-  });
-}
-
-// Load users with background loading
-function loadUsersBackground(forceRefresh) {
-  return BackgroundLoader.load('users', function() {
-    return callAPI('getUsers', AUTH.token);
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      return res.data || [];
-    }
-    throw new Error(res.message || 'Failed to load users');
-  });
-}
-
-// Load assets with background loading
-function loadAssetsBackground(forceRefresh) {
-  return BackgroundLoader.load('assets', function() {
-    return callAPI('getAssets', AUTH.token);
-  }, forceRefresh).then(function(res) {
-    if (res.success) {
-      _assetsCache = res.data || [];
-      return _assetsCache;
-    }
-    throw new Error(res.message || 'Failed to load assets');
-  });
-}
-
-// Preload all critical data after login
-function preloadCriticalData() {
-  var loaders = {
-    items: function() { return callAPI('getItems', AUTH.token); },
-    stock: function() { return callAPI('getItems', AUTH.token); },
-    users: function() { return callAPI('getUsers', AUTH.token); }
-  };
-  
-  return BackgroundLoader.preload(loaders).then(function(results) {
-    if (results.items && results.items.success) {
-      _itemsData = results.items.data || [];
-      _itemsCacheTime = Date.now();
-      updateLowStockBadge(_itemsData);
-    }
-    if (results.stock && results.stock.success) {
-      _stockData = results.stock.data || [];
-    }
-    if (results.users && results.users.success) {
-      // Users loaded successfully
-    }
-    return results;
-  });
-}
-
-// ===== ERROR HANDLING FOR BACKGROUND LOADING =====
-var ErrorHandler = {
-  errors: {},
-  
-  // Log error
-  log: function(key, error) {
-    this.errors[key] = {
-      error: error,
-      timestamp: Date.now(),
-      retryCount: 0
-    };
-    console.error('[BackgroundLoader] Error loading ' + key + ':', error);
-  },
-  
-  // Get error for key
-  get: function(key) {
-    return this.errors[key];
-  },
-  
-  // Clear error for key
-  clear: function(key) {
-    delete this.errors[key];
-  },
-  
-  // Increment retry count
-  incrementRetry: function(key) {
-    if (this.errors[key]) {
-      this.errors[key].retryCount++;
-    }
-  },
-  
-  // Show error UI
-  showErrorUI: function(key, containerId, retryFn) {
-    var error = this.get(key);
-    if (!error) return;
-    
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    
-    var html = '<div class="bg-error-state">';
-    html += '<i class="fi fi-rr-triangle-warning bg-error-icon"></i>';
-    html += '<div>';
-    html += '<div class="font-medium">โหลดข้อมูลไม่สำเร็จ</div>';
-    html += '<div class="text-sm opacity-75">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่</div>';
-    html += '</div>';
-    if (retryFn) {
-      html += '<button class="bg-error-retry" onclick="' + retryFn + '">';
-      html += '<i class="fi fi-rr-refresh mr-1"></i> ลองใหม่';
-      html += '</button>';
-    }
-    html += '</div>';
-    
-    container.innerHTML = html;
-  },
-  
-  // Show loading UI
-  showLoadingUI: function(containerId, message) {
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    
-    var html = '<div class="text-center py-8">';
-    html += '<div class="inline-loading">';
-    html += '<div class="inline-loading-spinner"></div>';
-    html += '<span>' + (message || 'กำลังโหลด...') + '</span>';
-    html += '</div>';
-    html += '</div>';
-    
-    container.innerHTML = html;
-  },
-  
-  // Show skeleton UI
-  showSkeletonUI: function(containerId, type) {
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    
-    var html = '';
-    if (type === 'table') {
-      for (var i = 0; i < 5; i++) {
-        html += '<div class="skeleton-row"></div>';
-      }
-    } else if (type === 'card') {
-      html += '<div class="skeleton-card"></div>';
-    } else if (type === 'text') {
-      html += '<div class="skeleton-text-lg"></div>';
-      html += '<div class="skeleton-text"></div>';
-      html += '<div class="skeleton-text"></div>';
-      html += '<div class="skeleton-text-sm"></div>';
-    }
-    
-    container.innerHTML = html;
-  },
-  
-  // Show success UI
-  showSuccessUI: function(containerId, message) {
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    
-    var html = '<div class="bg-success-state">';
-    html += '<i class="fi fi-rr-check-circle bg-success-icon"></i>';
-    html += '<span>' + (message || 'โหลดข้อมูลสำเร็จ') + '</span>';
-    html += '</div>';
-    
-    container.innerHTML = html;
-  }
-};
-
-// ===== URL PARAMS (for QR / Public) =====
+// ===== URL PARAMS (for QR) =====
 var _QR_ACTION = '';
 var _QR_ITEM_ID = '';
 var _QR_ASSET_ID = '';
-var _PUBLIC_ASSET_ID = '';
 
 // ===== AUTH =====
 var AUTH = {
@@ -383,6 +66,224 @@ function showLoading(text) {
 }
 function hideLoading() {
   document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// ===== BACKGROUND LOADING MANAGER =====
+var BackgroundLoader = (function() {
+  var cache = {};
+  var loadingPromises = {};
+  var errorCallbacks = {};
+  var CACHE_TTL = 60000; // 1 minute cache
+  var MAX_RETRIES = 3;
+  var RETRY_DELAY = 1000;
+  var indicatorElement = null;
+
+  function getCacheKey(key) {
+    return key;
+  }
+
+  function isCacheValid(entry) {
+    return entry && (Date.now() - entry.timestamp) < CACHE_TTL;
+  }
+
+  function loadWithRetry(apiFn, args, retries) {
+    return callAPI.apply(null, [apiFn].concat(args)).catch(function(err) {
+      if (retries < MAX_RETRIES) {
+        console.warn('[BackgroundLoader] Retry ' + (retries + 1) + '/' + MAX_RETRIES + ' for', apiFn);
+        return new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve(loadWithRetry(apiFn, args, retries + 1));
+          }, RETRY_DELAY * (retries + 1));
+        });
+      }
+      throw err;
+    });
+  }
+
+  function showIndicator() {
+    if (indicatorElement) return;
+    indicatorElement = document.createElement('div');
+    indicatorElement.className = 'bg-loading-indicator';
+    indicatorElement.innerHTML = '<div class="bg-loading-spinner"></div><span>กำลังโหลดข้อมูลเพิ่มเติม...</span>';
+    document.body.appendChild(indicatorElement);
+  }
+
+  function hideIndicator() {
+    if (indicatorElement) {
+      indicatorElement.remove();
+      indicatorElement = null;
+    }
+  }
+
+  function updateIndicator() {
+    var isLoading = Object.keys(loadingPromises).length > 0;
+    if (isLoading) {
+      showIndicator();
+    } else {
+      hideIndicator();
+    }
+  }
+
+  return {
+    preload: function(key, apiFn, args) {
+      var cacheKey = getCacheKey(key);
+      
+      // Return cached data if valid
+      if (cache[cacheKey] && isCacheValid(cache[cacheKey])) {
+        return Promise.resolve(cache[cacheKey].data);
+      }
+
+      // Return existing promise if already loading
+      if (loadingPromises[cacheKey]) {
+        return loadingPromises[cacheKey];
+      }
+
+      // Start new loading
+      var promise = loadWithRetry(apiFn, args, 0)
+        .then(function(res) {
+          if (res && res.success) {
+            cache[cacheKey] = {
+              data: res.data,
+              timestamp: Date.now()
+            };
+            delete loadingPromises[cacheKey];
+            updateIndicator();
+            return res.data;
+          }
+          delete loadingPromises[cacheKey];
+          updateIndicator();
+          throw new Error(res.message || 'Load failed');
+        })
+        .catch(function(err) {
+          delete loadingPromises[cacheKey];
+          updateIndicator();
+          if (errorCallbacks[cacheKey]) {
+            errorCallbacks[cacheKey](err);
+          }
+          throw err;
+        });
+
+      loadingPromises[cacheKey] = promise;
+      updateIndicator();
+      return promise;
+    },
+
+    get: function(key) {
+      var cacheKey = getCacheKey(key);
+      if (cache[cacheKey] && isCacheValid(cache[cacheKey])) {
+        return cache[cacheKey].data;
+      }
+      return null;
+    },
+
+    invalidate: function(key) {
+      var cacheKey = getCacheKey(key);
+      delete cache[cacheKey];
+    },
+
+    invalidateAll: function() {
+      cache = {};
+    },
+
+    isLoading: function(key) {
+      var cacheKey = getCacheKey(key);
+      return !!loadingPromises[cacheKey];
+    },
+
+    onError: function(key, callback) {
+      var cacheKey = getCacheKey(key);
+      errorCallbacks[cacheKey] = callback;
+    },
+
+    preloadMainData: function() {
+      // Preload commonly used data in background
+      var token = AUTH.token;
+      if (!token) return Promise.resolve();
+
+      return Promise.all([
+        this.preload('items', 'getItems', [token]).catch(function() {}),
+        this.preload('stock', 'getItems', [token]).catch(function() {}),
+        this.preload('withdrawals', 'getWithdrawals', [token, { status: 'all' }]).catch(function() {}),
+        this.preload('receives', 'getReceives', [token, {}]).catch(function() {}),
+        this.preload('transactions', 'getTransactions', [token, {}]).catch(function() {}),
+        this.preload('users', 'getUsers', [token]).catch(function() {})
+      ]);
+    }
+  };
+})();
+
+// ===== SKELETON LOADING HELPERS =====
+function renderSkeletonCard(count) {
+  var html = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
+  for (var i = 0; i < count; i++) {
+    html += '<div class="card p-4"><div class="skeleton skeleton-card mb-3"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text-sm"></div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderSkeletonTable(rows) {
+  var html = '<div class="card overflow-hidden"><div class="hidden md:block overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs"><tr><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th></tr></thead><tbody>';
+  for (var i = 0; i < rows; i++) {
+    html += '<tr><td colspan="5" class="px-4 py-3"><div class="skeleton skeleton-row"></div></td></tr>';
+  }
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function renderSkeletonKPI(count) {
+  var html = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
+  for (var i = 0; i < count; i++) {
+    html += '<div class="card p-4"><div class="flex items-center justify-between mb-3"><div class="w-11 h-11 skeleton rounded-xl"></div></div><div class="skeleton skeleton-text-lg"></div><div class="skeleton skeleton-text-sm"></div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// ===== BACKGROUND LOADING TEST =====
+function testBackgroundLoader() {
+  console.log('[Test] Starting BackgroundLoader tests...');
+  
+  // Test 1: Cache functionality
+  console.log('[Test 1] Testing cache...');
+  BackgroundLoader.invalidateAll();
+  var cached = BackgroundLoader.get('items');
+  console.log('[Test 1] Cache before load:', cached === null ? 'PASS (null)' : 'FAIL');
+  
+  // Test 2: Preload functionality
+  console.log('[Test 2] Testing preload...');
+  if (!AUTH.token) {
+    console.log('[Test 2] SKIP - No auth token');
+  } else {
+    BackgroundLoader.preload('items', 'getItems', [AUTH.token])
+      .then(function(data) {
+        console.log('[Test 2] Preload success:', data && data.length > 0 ? 'PASS' : 'FAIL');
+        var cachedAfter = BackgroundLoader.get('items');
+        console.log('[Test 2] Cache after load:', cachedAfter && cachedAfter.length > 0 ? 'PASS' : 'FAIL');
+      })
+      .catch(function(err) {
+        console.log('[Test 2] Preload error:', err.message);
+      });
+  }
+  
+  // Test 3: Loading status
+  console.log('[Test 3] Testing loading status...');
+  BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).catch(function(){});
+  var isLoading = BackgroundLoader.isLoading('stock');
+  console.log('[Test 3] Loading status:', isLoading ? 'PASS' : 'FAIL');
+  
+  // Test 4: Cache invalidation
+  console.log('[Test 4] Testing cache invalidation...');
+  BackgroundLoader.invalidate('items');
+  var cachedAfterInvalid = BackgroundLoader.get('items');
+  console.log('[Test 4] Cache after invalidate:', cachedAfterInvalid === null ? 'PASS' : 'FAIL');
+  
+  // Test 5: Background indicator
+  console.log('[Test 5] Testing background indicator...');
+  console.log('[Test 5] Check bottom-right corner for loading indicator when preloading data');
+  
+  console.log('[Test] Tests completed. Check console for results.');
+  console.log('[Test] To manually test: Call BackgroundLoader.preloadMainData() after login');
 }
 
 // ===== ALERTS =====
@@ -465,13 +366,18 @@ function renderPagination(containerId, total, currentPage, onPageClick) {
 }
 
 // ===== LOGIN =====
+function setLoginRole(role) {
+  document.getElementById('loginRole').value = role;
+}
+
 function doLogin() {
   var username = document.getElementById('loginUsername').value.trim();
   var password = document.getElementById('loginPassword').value;
+  var role     = document.getElementById('loginRole').value;
   if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
   var btn = document.getElementById('btnLogin');
   btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
-  callAPI('login', username, password).then(function(res) {
+  callAPI('login', username, password, role).then(function(res) {
     btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ';
     if (res.success) {
       AUTH.set(res.token, res.user);
@@ -515,18 +421,10 @@ function initApp() {
     localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
-    
-    // Background preload critical data
-    preloadCriticalData().then(function(results) {
-      console.log('[BackgroundLoader] Preload completed:', results);
-    }).catch(function(error) {
-      console.error('[BackgroundLoader] Preload failed:', error);
-    });
-    
-    // Preload assets for global search
-    if (AUTH.user.role !== 'employee') {
-      _loadAssetsCache();
-    }
+    // Start background preloading after dashboard loads
+    setTimeout(function() {
+      BackgroundLoader.preloadMainData();
+    }, 500);
     // QR action จาก URL
     if (_QR_ACTION === 'withdraw' && _QR_ITEM_ID) {
       setTimeout(function() { openWithdrawFromQR(_QR_ITEM_ID); }, 800);
@@ -547,9 +445,57 @@ function initApp() {
 function showLoginPage() {
   document.getElementById('loginPage').classList.remove('hidden');
   document.getElementById('mainShell').classList.add('hidden');
-  // Initialize particles when showing login page
+  // Initialize particles animation
   initLoginParticles();
+  // Load logo
+  callAPI('getConfig').then(function(res) {
+    if (res.success && res.data) {
+      var cfg = res.data;
+      if (cfg.app_name) {
+        document.getElementById('loginAppName').textContent = cfg.app_name;
+        document.getElementById('sidebarAppName').textContent = cfg.app_name;
+      }
+      updateLogoDisplay(cfg.app_logo);
+    }
+  }).catch(function() {});
 }
+
+function refreshPage() {
+  var icon = document.getElementById('refreshIcon');
+  if (icon) {
+    icon.style.transition = 'transform 0.6s';
+    icon.style.transform = 'rotate(360deg)';
+    setTimeout(function(){ icon.style.transform = ''; }, 650);
+  }
+  // ล้าง cache ทั้งหมดเพื่อดึงข้อมูลจริงจาก server
+  _itemsData = []; _itemsCacheTime = 0;
+  _stockData = [];
+  _receiveData = [];
+  _wdData = [];
+  _approveData = [];
+  _txData = [];
+  _usersData = [];
+  _assetData = [];
+  _pageCache = {};
+  // Clear background loader cache
+  BackgroundLoader.invalidateAll();
+  // โหลดหน้าปัจจุบันใหม่
+  if (_currentPage) loadPage(_currentPage);
+}
+
+function toggleProfileDropdown() {
+  var dd = document.getElementById('profileDropdown');
+  if (dd) dd.classList.toggle('hidden');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('profileDropdownWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var dd = document.getElementById('profileDropdown');
+    if (dd) dd.classList.add('hidden');
+  }
+});
 
 function showMainShell() {
   document.getElementById('loginPage').classList.add('hidden');
@@ -571,16 +517,9 @@ function showMainShell() {
   document.getElementById('menuAssetSection').style.display   = notEmp ? '' : 'none';
   document.getElementById('menuAssets').style.display          = isAdmin ? '' : 'none';
   document.getElementById('menuAssetStatus').style.display   = notEmp ? '' : 'none';
-  
-  // Load user avatar
-  loadUserAvatar();
   document.getElementById('menuAssetMaintenance').style.display = notEmp ? '' : 'none';
   document.getElementById('menuAssetCommittees').style.display = notEmp ? '' : 'none';
-  document.getElementById('menuDepreciation').style.display = notEmp ? '' : 'none';
-  document.getElementById('menuAssetRegister').style.display = notEmp ? '' : 'none';
   document.getElementById('menuAssetReports').style.display  = notEmp ? '' : 'none';
-  document.getElementById('menuAssetReportSection').style.display = notEmp ? '' : 'none';
-  initMenuSections();
   updateClock();
   setInterval(updateClock, 60000);
 }
@@ -599,14 +538,13 @@ function loadPage(page) {
   document.querySelectorAll('.menu-btn').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-page') === page);
   });
-  expandActiveMenuSection(page);
   var titles = {
     dashboard:'ภาพรวมระบบ', stock:'สต็อกคงเหลือ', items:'รายการวัสดุ',
     receive:'รับวัสดุเข้าคลัง', stocktake:'นับสต็อก', printqr:'พิมพ์ QR สติ๊กเกอร์', withdraw:'เบิกวัสดุ', approve:'อนุมัติการเบิก',
     transactions:'ประวัติเคลื่อนไหว', reports:'รายงาน',
     users:'จัดการผู้ใช้งาน', settings:'ตั้งค่าระบบ', profile:'โปรไฟล์',
     assets:'ทะเบียนครุภัณฑ์', assetstatus:'อัปเดตสถานภาพ', assetmaintenance:'ซ่อมบำรุง',
-    assetcommittees:'คณะกรรมการ', assetreports:'รายงานครุภัณฑ์', depreciation:'ค่าเสื่อม/อายุใช้งาน', assetregister:'ทะเบียนคุมสินทรัพย์', manual:'คู่มือการใช้งาน'
+    assetcommittees:'คณะกรรมการ', assetreports:'รายงานครุภัณฑ์'
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   document.getElementById('pageBreadcrumb').textContent = 'ระบบวัสดุสิ้นเปลือง / ' + (titles[page] || page);
@@ -633,9 +571,6 @@ function loadPage(page) {
   else if (page === 'assetmaintenance')   renderAssetMaintenance();
   else if (page === 'assetcommittees')    renderAssetCommittees();
   else if (page === 'assetreports')       renderAssetReports();
-  else if (page === 'depreciation')       renderDepreciation();
-  else if (page === 'assetregister')        renderAssetRegister();
-  else if (page === 'manual')               renderManual();
 }
 
 function toggleSidebar() {
@@ -643,163 +578,8 @@ function toggleSidebar() {
   document.getElementById('sidebarOverlay').classList.toggle('hidden');
 }
 
-function toggleMenuSection(section) {
-  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
-  if (!group) return;
-  var collapsed = group.classList.toggle('collapsed');
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
-  state[section] = collapsed;
-  localStorage.setItem('menu_collapsed', JSON.stringify(state));
-}
-
-function initMenuSections() {
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
-  document.querySelectorAll('.menu-group').forEach(function(group) {
-    var section = group.getAttribute('data-section');
-    if (state[section]) group.classList.add('collapsed');
-    else group.classList.remove('collapsed');
-  });
-}
-
-function renderManual() {
-  function mCard(num, icon, iconBg, title, items) {
-    var h = '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">';
-    h += '<div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100">';
-    h += '<div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ' + iconBg + '">';
-    h += '<i class="' + icon + ' text-white text-base"></i></div>';
-    h += '<div><span class="text-xs text-gray-400 font-medium">ขั้นตอนที่ ' + num + '</span>';
-    h += '<h4 class="text-sm font-bold text-gray-800 leading-tight">' + title + '</h4></div></div>';
-    h += '<ul class="px-5 py-4 space-y-2.5">';
-    items.forEach(function(item) {
-      h += '<li class="flex items-start gap-2.5 text-sm text-gray-600">';
-      h += '<span class="mt-1 w-1.5 h-1.5 rounded-full bg-navy-400 flex-shrink-0"></span>';
-      h += '<span>' + item + '</span></li>';
-    });
-    h += '</ul></div>';
-    return h;
-  }
-
-  var sections = [
-    { num:1, icon:'fi fi-rr-sign-in', bg:'bg-blue-500', title:'การเข้าสู่ระบบ', items:[
-      'เลือกบทบาท: <b class="text-navy-700">ผู้ดูแลระบบ</b> / <b class="text-navy-700">เจ้าหน้าที่</b> / <b class="text-navy-700">พนักงาน</b>',
-      'กรอกชื่อผู้ใช้งานและรหัสผ่านที่ได้รับ',
-      'กดปุ่ม <b>"เข้าสู่ระบบ"</b> หากลืมรหัสผ่านให้กด "ลืมรหัสผ่าน"'
-    ]},
-    { num:2, icon:'fi fi-rr-home', bg:'bg-indigo-500', title:'ภาพรวมระบบ (Dashboard)', items:[
-      'ดูสรุปจำนวนวัสดุ สต็อกต่ำ/หมด รออนุมัติ และเคลื่อนไหววันนี้',
-      'กราฟสถิติรับ-เบิก ย้อนหลัง 6 เดือนล่าสุด',
-      'รายการวัสดุใกล้หมดสต็อกแบบ real-time'
-    ]},
-    { num:3, icon:'fi fi-rr-box-open-full', bg:'bg-cyan-500', title:'จัดการรายการวัสดุ', items:[
-      '<b>เพิ่มวัสดุ:</b> กรอกชื่อ รหัส หมวดหมู่ หน่วยนับ จำนวนขั้นต่ำ และราคา',
-      '<b>แก้ไข/ลบ:</b> คลิกไอคอนดินสอหรือถังขยะในตารางรายการ',
-      '<b>อัปโหลดรูปภาพ:</b> กด "เลือกรูป" ในฟอร์มเพิ่ม/แก้ไข',
-      '<b>พิมพ์ QR Code:</b> ไปที่เมนู "พิมพ์ QR สติ๊กเกอร์" เลือกวัสดุแล้วพิมพ์'
-    ]},
-    { num:4, icon:'fi fi-rr-layers', bg:'bg-teal-500', title:'สต็อกคงเหลือ', items:[
-      'ดูสต็อกรายการวัสดุทั้งหมดแบบภาพรวม',
-      'ตัวกรองตามหมวดหมู่และสถานะสต็อก',
-      'สีแสดงสถานะ: <b class="text-green-600">ปกติ</b> / <b class="text-amber-500">ใกล้หมด</b> / <b class="text-red-600">หมด</b>'
-    ]},
-    { num:5, icon:'fi fi-rr-inbox-in', bg:'bg-green-500', title:'รับวัสดุเข้าคลัง', items:[
-      'เลือกวัสดุที่ต้องการรับเข้า',
-      'กรอกจำนวนที่รับเข้า ระบุผู้รับและเลขที่เอกสาร',
-      'ระบบบันทึกประวัติและเพิ่มจำนวนสต็อกอัตโนมัติ'
-    ]},
-    { num:6, icon:'fi fi-rr-inbox-out', bg:'bg-orange-500', title:'เบิกวัสดุ', items:[
-      'ค้นหาวัสดุที่ต้องการ หรือสแกน QR Code บนสติ๊กเกอร์',
-      'กรอกจำนวนที่ต้องการเบิก เลือกผู้รับและหน่วยงาน',
-      'ส่งคำขอเบิก → รอผู้ดูแลระบบอนุมัติก่อนหักสต็อก'
-    ]},
-    { num:7, icon:'fi fi-rr-check-circle', bg:'bg-emerald-500', title:'อนุมัติการเบิก (เฉพาะผู้ดูแลระบบ)', items:[
-      'เข้าเมนู "อนุมัติการเบิก" เพื่อดูรายการที่รอดำเนินการ',
-      'กด ✓ เพื่ออนุมัติ หรือ ✗ เพื่อปฏิเสธพร้อมระบุเหตุผล',
-      'เมื่ออนุมัติ ระบบหักสต็อกและบันทึกประวัติอัตโนมัติ'
-    ]},
-    { num:8, icon:'fi fi-rr-box-alt', bg:'bg-amber-500', title:'ทะเบียนครุภัณฑ์', items:[
-      '<b>เพิ่มครุภัณฑ์:</b> กรอกรหัส ชื่อ ประเภท หน่วยงาน ราคา วันที่รับเข้า',
-      '<b>อัปเดตสถานภาพ:</b> เปลี่ยนสถานะเป็น ใช้งาน / ชำรุด / จำหน่าย',
-      '<b>ซ่อมบำรุง:</b> บันทึกประวัติการซ่อมและค่าใช้จ่ายแต่ละครั้ง',
-      '<b>ค่าเสื่อม:</b> ดูตารางค่าเสื่อมราคาคำนวณอัตโนมัติตามอายุใช้งาน',
-      '<b>ทะเบียนคุมฯ:</b> พิมพ์แบบฟอร์มรายตัวพร้อม QR Code'
-    ]},
-    { num:9, icon:'fi fi-rr-chart-histogram', bg:'bg-violet-500', title:'รายงาน', items:[
-      'รายงานการตรวจสอบพัสดุประจำปีงบประมาณ',
-      'รายงานการเบิก-รับ แยกตามหมวดหมู่และเดือน',
-      'รายงานครุภัณฑ์: ตามสถานะ / ตามหน่วยงาน',
-      'พิมพ์เป็น PDF หรือ export ไฟล์ Excel'
-    ]},
-    { num:10, icon:'fi fi-rr-settings', bg:'bg-slate-500', title:'ตั้งค่าระบบ', items:[
-      '<b>ข้อมูลองค์กร:</b> ชื่อระบบ โลโก้ ชื่อองค์กร ปีงบประมาณ',
-      '<b>จัดการผู้ใช้:</b> เพิ่ม/แก้ไข/ลบ ผู้ใช้งานและกำหนดสิทธิ์',
-      '<b>หมวดหมู่:</b> จัดการหมวดหมู่วัสดุและประเภทครุภัณฑ์'
-    ]},
-    { num:11, icon:'fi fi-rr-bulb', bg:'bg-yellow-500', title:'เคล็ดลับการใช้งาน', items:[
-      'ใช้ช่อง <b>"ค้นหาเร็ว"</b> บนแถบด้านบนเพื่อหาวัสดุหรือครุภัณฑ์ได้ทันที',
-      'สแกน QR Code บนสติ๊กเกอร์เพื่อเบิกวัสดุโดยตรง ไม่ต้องค้นหา',
-      'สแกน QR ครุภัณฑ์เพื่อดูรายละเอียดแบบสาธารณะได้ทันที',
-      'ข้อมูลสต็อกอัปเดต real-time ทุกครั้งที่มีการรับ/เบิก'
-    ]}
-  ];
-
-  var html = '<div class="fade-in">';
-
-  // Hero header
-  html += '<div class="bg-gradient-to-r from-navy-800 to-navy-600 rounded-2xl p-6 mb-6 text-white">';
-  html += '<div class="flex items-center gap-4">';
-  html += '<div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-book text-white text-2xl"></i></div>';
-  html += '<div><h2 class="text-xl font-bold">คู่มือการใช้งาน</h2>';
-  html += '<p class="text-blue-200 text-sm mt-1">ระบบบริหารจัดการวัสดุสิ้นเปลืองและครุภัณฑ์</p></div></div>';
-  html += '<div class="grid grid-cols-3 gap-3 mt-5">';
-  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">11</div><div class="text-xs text-blue-200">หัวข้อ</div></div>';
-  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">3</div><div class="text-xs text-blue-200">บทบาทผู้ใช้</div></div>';
-  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">QR</div><div class="text-xs text-blue-200">สแกนได้ทันที</div></div>';
-  html += '</div></div>';
-
-  // Roles info bar
-  html += '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">';
-  html += '<div class="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-shield-check text-blue-600 text-lg"></i><div><p class="text-xs font-bold text-blue-700">ผู้ดูแลระบบ</p><p class="text-xs text-blue-500">เข้าถึงได้ทุกเมนู อนุมัติ จัดการผู้ใช้</p></div></div>';
-  html += '<div class="bg-green-50 border border-green-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-user-gear text-green-600 text-lg"></i><div><p class="text-xs font-bold text-green-700">เจ้าหน้าที่</p><p class="text-xs text-green-500">รับ-เบิกวัสดุ ดูรายงาน จัดการครุภัณฑ์</p></div></div>';
-  html += '<div class="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-user text-amber-600 text-lg"></i><div><p class="text-xs font-bold text-amber-700">พนักงาน</p><p class="text-xs text-amber-500">เบิกวัสดุ ดูสต็อกคงเหลือ</p></div></div>';
-  html += '</div>';
-
-  // Cards grid
-  html += '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">';
-  sections.forEach(function(s) {
-    html += mCard(s.num, s.icon, s.bg, s.title, s.items);
-  });
-  html += '</div></div>';
-
-  document.getElementById('mainContent').innerHTML = html;
-}
-
-function expandActiveMenuSection(page) {
-  var map = {
-    dashboard: 'main', stock: 'main',
-    items: 'inventory', receive: 'inventory', stocktake: 'inventory', printqr: 'inventory',
-    withdraw: 'withdraw', approve: 'withdraw', transactions: 'withdraw',
-    reports: 'report',
-    assets: 'asset', assetstatus: 'asset', assetmaintenance: 'asset', assetcommittees: 'asset', depreciation: 'asset', assetregister: 'asset',
-    assetreports: 'assetreport',
-    users: 'admin', settings: 'admin', manual: 'manual'
-  };
-  var section = map[page];
-  if (!section) return;
-  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
-  if (group) group.classList.remove('collapsed');
-}
-
 // ===== GLOBAL SEARCH =====
 var _globalSearchTimer;
-var _assetsCache = [];
-function _loadAssetsCache(callback) {
-  if (_assetsCache.length > 0) { if (callback) callback(); return; }
-  if (!AUTH.token) { if (callback) callback(); return; }
-  callAPI('getAssets', AUTH.token).then(function(res) {
-    _assetsCache = res.data || [];
-    if (callback) callback();
-  }).catch(function() { if (callback) callback(); });
-}
 function debounceGlobalSearch() {
   clearTimeout(_globalSearchTimer);
   _globalSearchTimer = setTimeout(performGlobalSearch, 300);
@@ -809,49 +589,31 @@ function performGlobalSearch() {
   var resultsDiv = document.getElementById('globalSearchResults');
   if (!q || q.length < 2) { resultsDiv.classList.add('hidden'); return; }
   var term = q.toLowerCase();
-  var matches = [];
-  // Items
-  (_itemsData || []).forEach(function(i) {
-    if (i.active === false) return;
-    if ((i.name||'').toLowerCase().includes(term) || (i.item_code||'').toLowerCase().includes(term) || (i.category||'').toLowerCase().includes(term)) {
-      matches.push({ type: 'item', id: i.id, name: i.name, code: i.item_code, sub: 'คงเหลือ ' + (i.current_stock||0) + ' ' + (i.unit||''), image: i.image_file_id });
-    }
-  });
-  // Assets
-  (_assetsCache || []).forEach(function(a) {
-    if ((a.asset_code||'').toLowerCase().includes(term) || (a.description||'').toLowerCase().includes(term) || (a.serial_number||'').toLowerCase().includes(term) || (a.gfmis_number||'').toLowerCase().includes(term)) {
-      matches.push({ type: 'asset', id: a.id, name: a.description || a.asset_code, code: a.asset_code, sub: a.serial_number || a.status || '', image: null });
-    }
-  });
-  matches = matches.slice(0, 10);
+  var matches = (_itemsData || []).filter(function(i) {
+    return i.active !== false && (
+      (i.name||'').toLowerCase().includes(term) ||
+      (i.item_code||'').toLowerCase().includes(term) ||
+      (i.category||'').toLowerCase().includes(term)
+    );
+  }).slice(0, 8);
   if (matches.length === 0) { resultsDiv.classList.add('hidden'); return; }
   var html = '';
-  matches.forEach(function(m) {
-    var iconClass = m.type === 'asset' ? 'fi fi-rr-box-alt' : 'fi fi-rr-box-open-full';
-    var label = m.type === 'asset' ? 'ครุภัณฑ์' : 'วัสดุ';
-    var imgHtml = m.image ? '<img src="' + imgUrl(m.image) + '" class="w-8 h-8 object-cover rounded-lg border border-gray-200" loading="lazy">' : '<div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center"><i class="' + iconClass + ' text-gray-400 text-xs"></i></div>';
-    html += '<div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" onclick="globalSearchGoTo(\'' + m.id + '\',\'' + m.type + '\')">';
+  matches.forEach(function(item) {
+    var img = imgUrl(item.image_file_id);
+    var imgHtml = img ? '<img src="' + img + '" class="w-8 h-8 object-cover rounded-lg border border-gray-200">' : '<div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-400 text-xs"></i></div>';
+    html += '<div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" onclick="globalSearchGoTo(\'' + item.id + '\')">';
     html += imgHtml;
-    html += '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(m.name) + '</p>';
-    html += '<p class="text-xs text-gray-500">' + escHtml(m.code||'') + ' • ' + escHtml(m.sub) + ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ' + (m.type==='asset'?'bg-amber-50 text-amber-700':'bg-blue-50 text-blue-700') + '">' + label + '</span></p></div>';
+    html += '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(item.name) + '</p>';
+    html += '<p class="text-xs text-gray-500">' + escHtml(item.item_code) + ' • คงเหลือ ' + item.current_stock + ' ' + escHtml(item.unit) + '</p></div>';
     html += '<i class="fi fi-rr-angle-right text-gray-400 text-xs"></i></div>';
   });
   resultsDiv.innerHTML = html;
   resultsDiv.classList.remove('hidden');
 }
-function globalSearchGoTo(id, type) {
+function globalSearchGoTo(itemId) {
   document.getElementById('globalSearch').value = '';
   document.getElementById('globalSearchResults').classList.add('hidden');
-  if (type === 'asset') {
-    _loadAssetRefs(function() {
-      callAPI('getAssets', AUTH.token).then(function(res) {
-        _assetData = res.data || [];
-        openAssetDetail(id);
-      }).catch(function() { showError('โหลดข้อมูลครุภัณฑ์ไม่สำเร็จ'); });
-    });
-  } else {
-    showItemDetailModal(id);
-  }
+  showItemDetailModal(itemId);
 }
 // ปิด dropdown เมื่อ click นอก
 window.addEventListener('click', function(e) {
@@ -898,10 +660,6 @@ function renderDashboard() {
       html += '</div></div>';
     }
 
-    // ── วัสดุ KPI ──
-    html += '<div class="flex items-center justify-between mb-2">';
-    html += '<p class="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5"><i class="fi fi-rr-box-open-full text-blue-500"></i> วัสดุสิ้นเปลือง</p>';
-    html += '<button onclick="loadPage(\'stock\')" class="text-xs text-navy-600 hover:underline">ดูสต็อก →</button></div>';
     html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
     var kpis = [
       { label:'รายการวัสดุ', value:kpi.total_items, icon:'fi-rr-box-open-full', color:'bg-blue-100', iconColor:'text-blue-600', danger:false },
@@ -910,29 +668,6 @@ function renderDashboard() {
       { label:'เคลื่อนไหววันนี้', value:kpi.today_tx, icon:'fi-rr-activity', color:'bg-green-100', iconColor:'text-green-600', danger:false }
     ];
     kpis.forEach(function(k) {
-      html += '<div class="card kpi-card p-4">';
-      html += '<div class="flex items-center justify-between mb-3">';
-      html += '<div class="w-11 h-11 ' + k.color + ' rounded-xl flex items-center justify-center"><i class="fi ' + k.icon + ' ' + k.iconColor + ' text-xl"></i></div>';
-      if (k.danger && k.value > 0) html += '<span class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">!</span>';
-      html += '</div>';
-      html += '<p class="text-2xl font-bold text-gray-800">' + k.value + '</p>';
-      html += '<p class="text-xs text-gray-500 mt-0.5">' + k.label + '</p>';
-      html += '</div>';
-    });
-    html += '</div>';
-
-    // ── ครุภัณฑ์ KPI ──
-    html += '<div class="flex items-center justify-between mb-2 mt-1">';
-    html += '<p class="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5"><i class="fi fi-rr-box-alt text-amber-500"></i> ครุภัณฑ์</p>';
-    html += '<button onclick="loadPage(\'assets\')" class="text-xs text-navy-600 hover:underline">ดูทะเบียน →</button></div>';
-    html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
-    var assetKpis = [
-      { label:'ครุภัณฑ์ทั้งหมด', value: kpi.asset_total||0, icon:'fi-rr-box-alt', color:'bg-amber-100', iconColor:'text-amber-600', danger:false },
-      { label:'กำลังใช้งาน', value: kpi.asset_active||0, icon:'fi-rr-check-circle', color:'bg-green-100', iconColor:'text-green-600', danger:false },
-      { label:'ชำรุด', value: kpi.asset_damaged||0, icon:'fi-rr-wrench', color:'bg-red-100', iconColor:'text-red-500', danger: (kpi.asset_damaged||0) > 0 },
-      { label:'จำหน่ายแล้ว', value: kpi.asset_disposed||0, icon:'fi-rr-trash', color:'bg-gray-100', iconColor:'text-gray-500', danger:false }
-    ];
-    assetKpis.forEach(function(k) {
       html += '<div class="card kpi-card p-4">';
       html += '<div class="flex items-center justify-between mb-3">';
       html += '<div class="w-11 h-11 ' + k.color + ' rounded-xl flex items-center justify-center"><i class="fi ' + k.icon + ' ' + k.iconColor + ' text-xl"></i></div>';
@@ -1146,11 +881,33 @@ var _itemsFilter = { search:'', category:'all', stock:'all' };
 var _itemImageFileId = null;
 var _itemsCacheTime = 0;
 var _configLogoFileId = null;
-var ITEMS_CACHE_TTL = 30000; // 30 วินาที
+var ITEMS_CACHE_TTL = 3000; // 3 วินาที (cache สั้น ๆ เพื่อให้ข้อมูลตรง Sheet เสมอ)
+
+// Auto-clear cache เมื่อกลับมาที่ tab เว็บ (เผื่อเปลี่ยนข้อมูลจาก Google Sheets)
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') {
+    _itemsCacheTime = 0;
+  }
+});
 
 function renderItems() {
   if (AUTH.user.role !== 'admin') { loadPage('stock'); return; }
   showLoading('โหลดรายการวัสดุ...');
+  
+  // Check BackgroundLoader cache first
+  var bgData = BackgroundLoader.get('items');
+  if (bgData && bgData.length > 0) {
+    _itemsData = bgData;
+    _itemsCacheTime = Date.now();
+    hideLoading();
+    updateLowStockBadge(_itemsData);
+    _itemsPage = 1;
+    buildItemsPage();
+    // Refresh in background
+    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
+    return;
+  }
+  
   // reuse cache ถ้ายังไม่หมดอายุ
   if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
     hideLoading();
@@ -1159,10 +916,12 @@ function renderItems() {
     buildItemsPage();
     return;
   }
-  callAPI('getItems', AUTH.token).then(function(res) {
+  
+  // Load from API
+  BackgroundLoader.preload('items', 'getItems', [AUTH.token]).then(function(data) {
     hideLoading();
-    if (!res.success) { showError(res.message); return; }
-    _itemsData = res.data;
+    if (!data) { showError('โหลดข้อมูลไม่สำเร็จ'); return; }
+    _itemsData = data;
     _itemsCacheTime = Date.now();
     updateLowStockBadge(_itemsData);
     _itemsPage  = 1;
@@ -1211,7 +970,7 @@ function buildItemsPage() {
     var sClass = getStockClass(item.current_stock, item.min_stock);
     var sLabel = getStockLabel(item.current_stock, item.min_stock);
     var imgUrlSrc = imgUrl(item.image_file_id);
-    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400"><i class="fi fi-rr-box-open-full text-sm"></i></div>';
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400"><i class="fi fi-rr-box-open-full text-sm"></i></div>';
     html += '<tr>';
     html += '<td class="px-4 py-3 text-gray-400 text-xs">' + ((_itemsPage-1)*ITEMS_PER_PAGE + idx + 1) + '</td>';
     html += '<td class="px-4 py-3">' + imgHtml + '</td>';
@@ -1238,7 +997,7 @@ function buildItemsPage() {
     var sClass = getStockClass(item.current_stock, item.min_stock);
     var sLabel = getStockLabel(item.current_stock, item.min_stock);
     var imgUrlSrc = imgUrl(item.image_file_id);
-    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-14 h-14 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-400 text-xl"></i></div>';
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-14 h-14 object-cover rounded-xl border border-gray-200">' : '<div class="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-400 text-xl"></i></div>';
     html += '<div class="card p-4 flex flex-col gap-3">';
     html += '<div class="flex items-start justify-between">';
     html += '<div>' + imgHtml + '</div>';
@@ -1290,12 +1049,10 @@ function applyItemFilter() {
 }
 
 function downloadCSVSample() {
-  var csv = '\uFEFFรหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
-  csv += 'M-001,กระดาษ A4,500 แผ่น,แพ็ค,วัสดุสำนักงาน,100,20,กระดาษ A4 ขนาด 80 แกรม 500 แผ่นต่อแพ็ค\n';
-  csv += 'M-002,ปากกาลูกลื่น,สีดำ,แท่ง,วัสดุสำนักงาน,200,50,ปากกาลูกลื่นสีดำขนาดมาตรฐาน\n';
-  csv += 'M-003,ไม้บรรทัด,30 ซม.,อัน,วัสดุสำนักงาน,50,10,ไม้บรรทัดพลาสติก 30 เซนติเมตร\n';
-  csv += 'M-004,สบู่เหลว,500 มล.,ขวด,วัสดุทำความสะอาด,30,5,สบู่เหลวสำหรับล้างมือ 500 มิลลิลิตร\n';
-  csv += 'M-005,ผ้าเช็ดมือ,30x30 ซม.,ผืน,วัสดุทำความสะอาด,100,20,ผ้าเช็ดมือขนาด 30x30 เซนติเมตร\n';
+  var csv = 'รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size S,กล่อง,อุปกรณ์ป้องกัน,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SUP-002,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size M,กล่อง,อุปกรณ์ป้องกัน,15,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SUP-003,สำลี,200 g.,ถุง,วัสถุดิบทางการแพทย์,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
   var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -1480,36 +1237,18 @@ function handleItemImageUpload(input) {
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
     showLoading('กำลังอัปโหลดรูป...');
-    // Get drive folder ID from config
-    callAPI('getConfig', AUTH.token).then(function(cfgRes) {
-      var folderId = (cfgRes.data && cfgRes.data.drive_folder_id) || '';
-      callAPI('uploadFile', AUTH.token, base64, file.type, file.name, folderId).then(function(res) {
-        hideLoading();
-        if (res.success) {
-          _itemImageFileId = res.file_id;
-          var preview = document.getElementById('itemImagePreview');
-          var imgSrc = imgUrl(res.file_id);
-          if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
-          showSuccess('อัปโหลดรูปเรียบร้อย');
-        } else {
-          showError(res.message || 'อัปโหลดไม่สำเร็จ');
-        }
-      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
-    }).catch(function() {
-      // Fallback without folder ID if config fails
-      callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
-        hideLoading();
-        if (res.success) {
-          _itemImageFileId = res.file_id;
-          var preview = document.getElementById('itemImagePreview');
-          var imgSrc = imgUrl(res.file_id);
-          if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
-          showSuccess('อัปโหลดรูปเรียบร้อย');
-        } else {
-          showError(res.message || 'อัปโหลดไม่สำเร็จ');
-        }
-      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
-    });
+    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+      hideLoading();
+      if (res.success) {
+        _itemImageFileId = res.file_id;
+        var preview = document.getElementById('itemImagePreview');
+        var imgSrc = imgUrl(res.file_id);
+        if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+        showSuccess('อัปโหลดรูปเรียบร้อย');
+      } else {
+        showError(res.message || 'อัปโหลดไม่สำเร็จ');
+      }
+    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
   };
   reader.readAsDataURL(file);
 }
@@ -1531,8 +1270,11 @@ function deleteItemConfirm(id, name) {
     showLoading('กำลังลบ...');
     callAPI('deleteItem', AUTH.token, id).then(function(res) {
       hideLoading();
-      if (res.success) { showSuccess(res.message); renderItems(); }
-      else showError(res.message);
+      if (res.success) {
+        showSuccess(res.message);
+        _itemsData = _itemsData.filter(function(i) { return i.id !== id; });
+        buildItemsPage();
+      } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
   }, 'ลบ');
 }
@@ -1548,7 +1290,7 @@ function showItemDetailModal(itemId) {
   var imgUrlSrc = imgUrl(item.image_file_id);
   var imgSection = '';
   if (imgUrlSrc) {
-    imgSection = '<div class="flex justify-center mb-4"><img src="' + imgUrlSrc + '" class="w-40 h-40 object-cover rounded-2xl border border-gray-200 shadow-sm" loading="lazy"></div>';
+    imgSection = '<div class="flex justify-center mb-4"><img src="' + imgUrlSrc + '" class="w-40 h-40 object-cover rounded-2xl border border-gray-200 shadow-sm"></div>';
   } else {
     imgSection = '<div class="flex justify-center mb-4"><div class="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-300 text-4xl"></i></div></div>';
   }
@@ -1657,6 +1399,21 @@ function updateLowStockBadge(items) {
 
 function renderStock() {
   showLoading('โหลดสต็อก...');
+  
+  // Check BackgroundLoader cache first
+  var bgData = BackgroundLoader.get('stock');
+  if (bgData && bgData.length > 0) {
+    _itemsData = bgData;
+    _itemsCacheTime = Date.now();
+    _stockData = bgData;
+    hideLoading();
+    updateLowStockBadge(_itemsData);
+    buildStockPage();
+    // Refresh in background
+    BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).catch(function() {});
+    return;
+  }
+  
   // reuse cache ถ้ายังไม่หมดอายุ
   if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
     hideLoading();
@@ -1665,12 +1422,14 @@ function renderStock() {
     buildStockPage();
     return;
   }
-  callAPI('getItems', AUTH.token).then(function(res) {
+  
+  // Load from API
+  BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).then(function(data) {
     hideLoading();
-    if (!res.success) { showError(res.message); return; }
-    _itemsData = res.data;
+    if (!data) { showError('โหลดข้อมูลไม่สำเร็จ'); return; }
+    _itemsData = data;
     _itemsCacheTime = Date.now();
-    _stockData = res.data;
+    _stockData = data;
     updateLowStockBadge(_itemsData);
     buildStockPage();
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
@@ -1708,7 +1467,7 @@ function buildStockContent(data) {
       html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">';
       html += '<div class="flex items-start justify-between">';
       var imgUrlSrc = imgUrl(item.image_file_id);
-      var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
+      var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
       html += '<div>' + cardImg + '</div>';
       html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
       html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
@@ -1771,15 +1530,28 @@ var _receivePage = 1;
 
 function renderReceive() {
   showLoading('โหลดข้อมูลรับเข้า...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
-  Promise.all([ itemsPromise, callAPI('getReceives', AUTH.token, {}) ]).then(function(results) {
+  
+  // Check BackgroundLoader cache for items
+  var bgItems = BackgroundLoader.get('items');
+  var bgReceives = BackgroundLoader.get('receives');
+  
+  var itemsPromise = (bgItems && bgItems.length > 0)
+    ? Promise.resolve({ success: true, data: bgItems })
+    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
+    
+  var receivesPromise = (bgReceives && bgReceives.length > 0)
+    ? Promise.resolve({ success: true, data: bgReceives })
+    : BackgroundLoader.preload('receives', 'getReceives', [AUTH.token, {}]);
+  
+  Promise.all([ itemsPromise, receivesPromise ]).then(function(results) {
     hideLoading();
-    _itemsData   = results[0].data || [];
+    _itemsData = results[0].data || [];
+    _itemsCacheTime = Date.now();
     _receiveData = results[1].data || [];
     _receivePage = 1;
     buildReceivePage();
+    // Refresh in background
+    BackgroundLoader.preload('receives', 'getReceives', [AUTH.token, {}]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -1849,13 +1621,21 @@ function submitReceive() {
 // ===== STOCKTAKE =====
 function renderStocktake() {
   showLoading('โหลดข้อมูล...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
+  
+  // Check BackgroundLoader cache for items
+  var bgItems = BackgroundLoader.get('items');
+  
+  var itemsPromise = (bgItems && bgItems.length > 0)
+    ? Promise.resolve({ success: true, data: bgItems })
+    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
+  
   itemsPromise.then(function(res) {
     hideLoading();
     _itemsData = res.data || [];
+    _itemsCacheTime = Date.now();
     buildStocktakePage();
+    // Refresh in background
+    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -1917,58 +1697,45 @@ function submitStocktake() {
 
 // ===== PRINT QR LABELS =====
 var _printQRFilter = { search:'', category:'all' };
-var _printQRMode = 'item'; // 'item' | 'asset'
 function renderPrintQRLabels() {
   showLoading('โหลดข้อมูล...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
-  var assetsPromise = (_assetsCache.length > 0)
-    ? Promise.resolve({ success: true, data: _assetsCache })
-    : callAPI('getAssets', AUTH.token).then(function(res){ _assetsCache = res.data||[]; return res; });
-  Promise.all([itemsPromise, assetsPromise]).then(function(results) {
+  
+  // Check BackgroundLoader cache for items
+  var bgItems = BackgroundLoader.get('items');
+  
+  var itemsPromise = (bgItems && bgItems.length > 0)
+    ? Promise.resolve({ success: true, data: bgItems })
+    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
+  
+  itemsPromise.then(function(res) {
     hideLoading();
-    _itemsData = results[0].data || [];
-    _assetsCache = results[1].data || [];
+    _itemsData = res.data || [];
+    _itemsCacheTime = Date.now();
     buildPrintQRPage();
+    // Refresh in background
+    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
 function buildPrintQRPage() {
-  var isAsset = _printQRMode === 'asset';
-  var source = isAsset ? (_assetsCache || []) : (_itemsData || []);
-  var filtered = source.filter(function(i) {
-    if (!isAsset && i.active === false) return false;
-    if (_printQRFilter.search) {
-      var term = _printQRFilter.search.toLowerCase();
-      var name = (i.name || i.description || '').toLowerCase();
-      var code = (i.item_code || i.asset_code || '').toLowerCase();
-      if (!name.includes(term) && !code.includes(term)) return false;
-    }
-    if (!isAsset && _printQRFilter.category !== 'all' && i.category !== _printQRFilter.category) return false;
+  var filtered = _itemsData.filter(function(i) {
+    if (i.active === false) return false;
+    if (_printQRFilter.search && !i.name.toLowerCase().includes(_printQRFilter.search.toLowerCase()) && !(i.item_code||'').toLowerCase().includes(_printQRFilter.search.toLowerCase())) return false;
+    if (_printQRFilter.category !== 'all' && i.category !== _printQRFilter.category) return false;
     return true;
   });
-  var cats = isAsset ? [] : getCategoryList(_itemsData);
+  var cats = getCategoryList(_itemsData);
 
   var html = '<div class="fade-in space-y-4">';
-  // Mode toggle
-  html += '<div class="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit">';
-  html += '<button onclick="setPrintQRMode(\'item\')" class="px-4 py-1.5 text-sm rounded-lg font-medium transition ' + (!isAsset ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-500 hover:text-gray-700') + '"><i class="fi fi-rr-box-open-full mr-1"></i>วัสดุ</button>';
-  html += '<button onclick="setPrintQRMode(\'asset\')" class="px-4 py-1.5 text-sm rounded-lg font-medium transition ' + (isAsset ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-500 hover:text-gray-700') + '"><i class="fi fi-rr-box-alt mr-1"></i>ครุภัณฑ์</button>';
-  html += '</div>';
-
   // Toolbar
   html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
   html += '<div class="flex gap-2 flex-wrap">';
   html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
-  html += '<input type="text" id="printQRSearch" placeholder="ค้นหา' + (isAsset?'ครุภัณฑ์':'วัสดุ') + '..." value="' + escHtml(_printQRFilter.search) + '" onkeyup="debouncePrintQRFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
-  if (!isAsset) {
-    html += '<select id="printQRCat" onchange="applyPrintQRFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none">';
-    html += '<option value="all">ทุกหมวด</option>';
-    cats.forEach(function(c){ html += '<option value="' + escHtml(c) + '" ' + (_printQRFilter.category===c?'selected':'') + '>' + escHtml(c) + '</option>'; });
-    html += '</select>';
-  }
-  html += '</div>';
+  html += '<input type="text" id="printQRSearch" placeholder="ค้นหาวัสดุ..." value="' + escHtml(_printQRFilter.search) + '" onkeyup="debouncePrintQRFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
+  html += '<select id="printQRCat" onchange="applyPrintQRFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none">';
+  html += '<option value="all">ทุกหมวด</option>';
+  cats.forEach(function(c){ html += '<option value="' + escHtml(c) + '" ' + (_printQRFilter.category===c?'selected':'') + '>' + escHtml(c) + '</option>'; });
+  html += '</select></div>';
   html += '<div class="flex gap-2">';
   html += '<button onclick="toggleSelectAllQR()" class="btn-secondary btn-sm"><i class="fi fi-rr-check mr-1"></i>เลือกทั้งหมด/ยกเลิก</button>';
   html += '<button onclick="printSelectedQRLabels()" class="btn-primary btn-sm"><i class="fi fi-rr-print mr-1"></i>พิมพ์ที่เลือก</button></div></div>';
@@ -1978,22 +1745,18 @@ function buildPrintQRPage() {
   html += '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">';
   if (filtered.length === 0) html += '<p class="col-span-full text-center text-gray-400 py-10">ไม่พบรายการ</p>';
   filtered.forEach(function(item) {
-    var img = isAsset ? '' : imgUrl(item.image_file_id);
-    var iconClass = isAsset ? 'fi fi-rr-box-alt' : 'fi fi-rr-box-open-full';
-    var imgHtml = img ? '<img src="' + img + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><i class="' + iconClass + ' text-gray-400 text-sm"></i></div>';
-    var name = isAsset ? (item.description || item.asset_code) : item.name;
-    var code = isAsset ? item.asset_code : item.item_code;
+    var img = imgUrl(item.image_file_id);
+    var imgHtml = img ? '<img src="' + img + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-400 text-sm"></i></div>';
     html += '<label class="card p-3 flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow" onclick="event.stopPropagation()">';
-    html += '<input type="checkbox" class="qr-print-check w-4 h-4 accent-navy-600 flex-shrink-0" data-id="' + item.id + '" data-type="' + (isAsset?'asset':'item') + '">';
+    html += '<input type="checkbox" class="qr-print-check w-4 h-4 accent-navy-600 flex-shrink-0" data-id="' + item.id + '">';
     html += imgHtml;
-    html += '<div class="min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(name) + '</p>';
-    html += '<p class="text-xs text-gray-500">' + escHtml(code||'') + '</p></div>';
+    html += '<div class="min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(item.name) + '</p>';
+    html += '<p class="text-xs text-gray-500">' + escHtml(item.item_code) + '</p></div>';
     html += '</label>';
   });
   html += '</div></div>';
   document.getElementById('mainContent').innerHTML = html;
 }
-function setPrintQRMode(mode) { _printQRMode = mode; buildPrintQRPage(); }
 
 var _printQRFilterTimer;
 function debouncePrintQRFilter() { clearTimeout(_printQRFilterTimer); _printQRFilterTimer = setTimeout(applyPrintQRFilter, 300); }
@@ -2012,10 +1775,8 @@ function printSelectedQRLabels() {
   var selected = [];
   document.querySelectorAll('.qr-print-check:checked').forEach(function(c) {
     var id = c.getAttribute('data-id');
-    var type = c.getAttribute('data-type');
-    var source = type === 'asset' ? _assetsCache : _itemsData;
-    var item = source.find(function(i){ return i.id === id; });
-    if (item) selected.push({ data: item, type: type });
+    var item = _itemsData.find(function(i){ return i.id === id; });
+    if (item) selected.push(item);
   });
   if (selected.length === 0) { showError('กรุณาเลือกอย่างน้อย 1 รายการ'); return; }
 
@@ -2023,36 +1784,27 @@ function printSelectedQRLabels() {
   var win = window.open('', '_blank');
   var css = 'body{font-family:sarabun,sans-serif;margin:0;padding:8mm;background:#fff}' +
     '@media print{@page{size:A4;margin:8mm}}' +
-    '.sheet{display:flex;flex-wrap:wrap;gap:5mm;justify-content:flex-start}' +
-    '.label{width:50mm;height:40mm;border:1px solid #ccc;padding:3mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;page-break-inside:avoid}' +
-    '.name{font-size:10px;font-weight:700;color:#1a2566;margin:0 0 1mm;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-    '.meta{font-size:8px;color:#666;margin:0 0 1.5mm}' +
-    '.qr-wrap{width:22mm;height:22mm}';
+    '.sheet{display:flex;flex-wrap:wrap;gap:4mm;justify-content:flex-start}' +
+    '.label{width:44mm;height:30mm;border:1px solid #ccc;padding:2mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;page-break-inside:avoid}' +
+    '.name{font-size:9px;font-weight:700;color:#1a2566;margin:0 0 0.5mm;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.meta{font-size:7px;color:#666;margin:0 0 1mm}' +
+    '.qr-wrap{width:16mm;height:16mm}';
 
   var bodyHtml = '<div class="sheet">';
-  selected.forEach(function(s) {
-    var item = s.data;
-    var isAsset = s.type === 'asset';
-    var qrUrl = isAsset ? baseUrl + '?public_asset_id=' + item.id : baseUrl + '?action=withdraw&item_id=' + item.id;
-    var name = isAsset ? (item.description || item.asset_code) : item.name;
-    var code = isAsset ? item.asset_code : item.item_code;
-    var extra = isAsset ? '' : (item.size || '');
-    var uid = s.type + '_' + item.id;
+  selected.forEach(function(item) {
+    var qrUrl = baseUrl + '?action=withdraw&item_id=' + item.id;
     bodyHtml += '<div class="label">';
-    bodyHtml += '<p class="name">' + escHtml(name) + '</p>';
-    bodyHtml += '<p class="meta">' + escHtml(code) + (extra ? ' • ' + escHtml(extra) : '') + '</p>';
-    bodyHtml += '<div class="qr-wrap" id="qr_' + uid + '"></div>';
+    bodyHtml += '<p class="name">' + escHtml(item.name) + '</p>';
+    bodyHtml += '<p class="meta">' + escHtml(item.item_code) + (item.size ? ' • ' + escHtml(item.size) : '') + '</p>';
+    bodyHtml += '<div class="qr-wrap" id="qr_' + item.id + '"></div>';
     bodyHtml += '</div>';
   });
   bodyHtml += '</div>';
 
   var scriptHtml = '';
-  selected.forEach(function(s) {
-    var item = s.data;
-    var isAsset = s.type === 'asset';
-    var qrUrl = isAsset ? baseUrl + '?public_asset_id=' + item.id : baseUrl + '?action=withdraw&item_id=' + item.id;
-    var uid = s.type + '_' + item.id;
-    scriptHtml += 'new QRCode(document.getElementById("qr_' + uid + '"),{text:"' + qrUrl + '",width:80,height:80,colorDark:"#1a2566",correctLevel:QRCode.CorrectLevel.M});';
+  selected.forEach(function(item) {
+    var qrUrl = baseUrl + '?action=withdraw&item_id=' + item.id;
+    scriptHtml += 'new QRCode(document.getElementById("qr_' + item.id + '"),{text:"' + qrUrl + '",width:60,height:60,colorDark:"#1a2566",correctLevel:QRCode.CorrectLevel.M});';
   });
 
   win.document.write('<html><head><title>พิมพ์ QR สติ๊กเกอร์</title><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">'
@@ -2070,15 +1822,28 @@ var _wdFilter = 'all';
 
 function renderWithdraw() {
   showLoading('โหลดข้อมูล...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
-  Promise.all([ itemsPromise, callAPI('getWithdrawals', AUTH.token, { status:'all' }) ]).then(function(results) {
+  
+  // Check BackgroundLoader cache for items and withdrawals
+  var bgItems = BackgroundLoader.get('items');
+  var bgWithdrawals = BackgroundLoader.get('withdrawals');
+  
+  var itemsPromise = (bgItems && bgItems.length > 0)
+    ? Promise.resolve({ success: true, data: bgItems })
+    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
+    
+  var withdrawalsPromise = (bgWithdrawals && bgWithdrawals.length > 0)
+    ? Promise.resolve({ success: true, data: bgWithdrawals })
+    : BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]);
+  
+  Promise.all([ itemsPromise, withdrawalsPromise ]).then(function(results) {
     hideLoading();
     _itemsData = results[0].data || [];
-    _wdData    = results[1].data || [];
-    _wdPage    = 1;
+    _itemsCacheTime = Date.now();
+    _wdData = results[1].data || [];
+    _wdPage = 1;
     buildWithdrawPage();
+    // Refresh in background
+    BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2260,7 +2025,7 @@ function buildWdItemList(data) {
   return data.map(function(i) {
     var sClass = getStockClass(i.current_stock, i.min_stock);
     var imgUrlSrc = imgUrl(i.image_file_id);
-    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-9 h-9 object-cover rounded-xl border border-gray-200 flex-shrink-0" loading="lazy">' : '<div class="w-9 h-9 bg-navy-100 rounded-xl flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-box-open-full text-navy-700 text-sm"></i></div>';
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-9 h-9 object-cover rounded-xl border border-gray-200 flex-shrink-0">' : '<div class="w-9 h-9 bg-navy-100 rounded-xl flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-box-open-full text-navy-700 text-sm"></i></div>';
     return '<div onclick="selectWdItem(\'' + i.id + '\')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-navy-50 border border-transparent hover:border-navy-200 transition">'
       + imgHtml
       + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-700 truncate">' + escHtml(i.name) + '</p>'
@@ -2342,7 +2107,17 @@ function submitWithdraw() {
     hideLoading(); closeModal();
     if (res.success) {
       showSuccess('ยื่นคำขอ ' + res.withdraw_no + ' เรียบร้อย รอการอนุมัติ');
-      if (_currentPage === 'withdraw') renderWithdraw();
+      // อัปเดต local cache ทันที ไม่ต้องรอ refresh
+      for (var i = 0; i < _itemsData.length; i++) {
+        if (_itemsData[i].id === itemId) {
+          _itemsData[i].current_stock = (_itemsData[i].current_stock || 0) - qty;
+          break;
+        }
+      }
+      _stockData = _itemsData;
+      if (_currentPage === 'stock') buildStockPage();
+      else if (_currentPage === 'items') { _itemsPage = 1; buildItemsPage(); }
+      else if (_currentPage === 'withdraw') renderWithdraw();
       else if (_currentPage === 'dashboard') renderDashboard();
     } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
@@ -2355,11 +2130,21 @@ var _approvePage = 1;
 function renderApprove() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
   showLoading('โหลดคำขอเบิก...');
-  callAPI('getWithdrawals', AUTH.token, { status:'all' }).then(function(res) {
+  
+  // Check BackgroundLoader cache for withdrawals
+  var bgWithdrawals = BackgroundLoader.get('withdrawals');
+  
+  var withdrawalsPromise = (bgWithdrawals && bgWithdrawals.length > 0)
+    ? Promise.resolve({ success: true, data: bgWithdrawals })
+    : BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]);
+  
+  withdrawalsPromise.then(function(res) {
     hideLoading();
     _approveData = res.data || [];
     _approvePage = 1;
     buildApprovePage('pending');
+    // Refresh in background
+    BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2493,11 +2278,21 @@ var _txFilter = { type:'all', date_from:'', date_to:'' };
 
 function renderTransactions() {
   showLoading('โหลดประวัติ...');
-  callAPI('getTransactions', AUTH.token, {}).then(function(res) {
+  
+  // Check BackgroundLoader cache for transactions
+  var bgTransactions = BackgroundLoader.get('transactions');
+  
+  var transactionsPromise = (bgTransactions && bgTransactions.length > 0)
+    ? Promise.resolve({ success: true, data: bgTransactions })
+    : BackgroundLoader.preload('transactions', 'getTransactions', [AUTH.token, {}]);
+  
+  transactionsPromise.then(function(res) {
     hideLoading();
     _txData = res.data || [];
     _txPage = 1;
     buildTransactionsPage();
+    // Refresh in background
+    BackgroundLoader.preload('transactions', 'getTransactions', [AUTH.token, {}]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2849,49 +2644,6 @@ function exportLowStock() {
 }
 
 // ===== PROFILE =====
-function loadUserAvatar() {
-  callAPI('getUsers', AUTH.token).then(function(res) {
-    if (res.success && res.data) {
-      var user = res.data.find(function(u){ return u.id === AUTH.user.id; });
-      if (user && user.avatar) {
-        updateAvatarDisplay(user.avatar);
-      }
-    }
-  }).catch(function() {});
-}
-
-function updateAvatarDisplay(avatarFileId) {
-  var avatarUrl = avatarFileId ? getFileDataUrl(avatarFileId) : '';
-  
-  // Update sidebar avatar
-  var sidebarImg = document.getElementById('sidebarAvatarImg');
-  var sidebarIcon = document.getElementById('sidebarAvatarIcon');
-  if (sidebarImg && sidebarIcon) {
-    if (avatarUrl) {
-      sidebarImg.src = avatarUrl;
-      sidebarImg.classList.remove('hidden');
-      sidebarIcon.classList.add('hidden');
-    } else {
-      sidebarImg.classList.add('hidden');
-      sidebarIcon.classList.remove('hidden');
-    }
-  }
-  
-  // Update top bar avatar
-  var topbarImg = document.getElementById('topbarAvatarImg');
-  var topbarIcon = document.getElementById('topbarAvatarIcon');
-  if (topbarImg && topbarIcon) {
-    if (avatarUrl) {
-      topbarImg.src = avatarUrl;
-      topbarImg.classList.remove('hidden');
-      topbarIcon.classList.add('hidden');
-    } else {
-      topbarImg.classList.add('hidden');
-      topbarIcon.classList.remove('hidden');
-    }
-  }
-}
-
 function renderProfile() {
   showLoading('โหลดโปรไฟล์...');
   callAPI('getUsers', AUTH.token).then(function(res) {
@@ -2997,37 +2749,20 @@ function doChangePassword() {
 function uploadAvatar(event) {
   var file = event.target.files[0];
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 20 MB'); return; }
+  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2 MB'); return; }
   showLoading('กำลังอัปโหลดรูป...');
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
-    // Get drive folder ID from config
-    callAPI('getConfig', AUTH.token).then(function(cfgRes) {
-      var folderId = (cfgRes.data && cfgRes.data.drive_folder_id) || '';
-      callAPI('uploadFile', AUTH.token, base64, file.type, file.name, folderId).then(function(res) {
-        hideLoading();
-        if (res.success) {
-          callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
-            showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
-            renderProfile();
-            loadUserAvatar(); // Update avatar display
-          });
-        } else showError(res.message);
-      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
-    }).catch(function() {
-      // Fallback without folder ID if config fails
-      callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
-        hideLoading();
-        if (res.success) {
-          callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
-            showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
-            renderProfile();
-            loadUserAvatar();
-          });
-        } else showError(res.message);
-      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
-    });
+    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+      hideLoading();
+      if (res.success) {
+        callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
+          showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
+          renderProfile();
+        });
+      } else showError(res.message);
+    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
   };
   reader.readAsDataURL(file);
 }
@@ -3039,11 +2774,21 @@ var _usersPage = 1;
 function renderUsers() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
   showLoading('โหลดรายชื่อผู้ใช้...');
-  callAPI('getUsers', AUTH.token).then(function(res) {
+  
+  // Check BackgroundLoader cache for users
+  var bgUsers = BackgroundLoader.get('users');
+  
+  var usersPromise = (bgUsers && bgUsers.length > 0)
+    ? Promise.resolve({ success: true, data: bgUsers })
+    : BackgroundLoader.preload('users', 'getUsers', [AUTH.token]);
+  
+  usersPromise.then(function(res) {
     hideLoading();
     _usersData = res.data || [];
     _usersPage = 1;
     buildUsersPage();
+    // Refresh in background
+    BackgroundLoader.preload('users', 'getUsers', [AUTH.token]).catch(function() {});
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -3178,25 +2923,13 @@ function doToggleUser(userId, name) {
 }
 
 // ===== SETTINGS =====
-var _settingsCats = [], _settingsTypes = [], _settingsAmphoes = [], _settingsFiscalYears = [];
-
 function renderSettings() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
   showLoading('โหลดการตั้งค่า...');
-  Promise.all([
-    callAPI('getConfig', AUTH.token),
-    callAPI('getAssetCategories', AUTH.token),
-    callAPI('getAssetTypes', AUTH.token),
-    callAPI('getAmphoes', AUTH.token),
-    callAPI('getFiscalYears', AUTH.token)
-  ]).then(function(res) {
+  callAPI('getConfig', AUTH.token).then(function(res) {
     hideLoading();
-    if (!res[0].success) { showError(res[0].message); return; }
-    _settingsCats = res[1].data || [];
-    _settingsTypes = res[2].data || [];
-    _settingsAmphoes = res[3].data || [];
-    _settingsFiscalYears = res[4].data || [];
-    buildSettingsPage(res[0].data);
+    if (!res.success) { showError(res.message); return; }
+    buildSettingsPage(res.data);
   }).catch(function(){ hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -3217,7 +2950,7 @@ function buildSettingsPage(cfg) {
   if (logoImgSrc) {
     html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><div class="flex items-center gap-3"><img id="cfgLogoPreview" src="' + logoImgSrc + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div><input type="hidden" id="cfgLogoFileId" value="' + (_configLogoFileId||'') + '"></div>';
   } else {
-    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 20MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
+    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 2MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
   }
   html += '</div></div>';
 
@@ -3243,74 +2976,6 @@ function buildSettingsPage(cfg) {
   html += fieldHTML('ระดับสต็อกขั้นต่ำเริ่มต้น', 'cfgLowStock', 'number', cfg.low_stock_threshold||5);
   html += '</div></div>';
 
-  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-folder-open text-navy-600"></i> การตั้งค่าการจัดเก็บไฟล์</h3></div>';
-  html += '<div class="card-body space-y-4">';
-  html += '<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">';
-  html += '<p class="font-semibold mb-1">วิธีหา Google Drive Folder ID</p>';
-  html += '<ol class="list-decimal list-inside space-y-0.5">';
-  html += '<li>เปิดโฟลเดอร์ใน Google Drive</li>';
-  html += '<li>ดู URL ในช่อง address bar</li>';
-  html += '<li>คัดลอกส่วนหลัง /folders/ เช่น: 1A2b3C4d5E6f7G8h9I0jK</li>';
-  html += '</ol></div>';
-  html += fieldHTML('Google Drive Folder ID สำหรับเก็บรูปภาพ', 'cfgDriveFolderId', 'text', cfg.drive_folder_id||'', '');
-  html += '<p class="text-xs text-gray-400 mt-1">เว้นว่างไว้หากต้องการเก็บใน Root ของ Drive</p>';
-  html += '</div></div>';
-
-  // ===== MASTER DATA: Asset Categories =====
-  html += '<div class="card"><div class="card-header flex items-center justify-between"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-folder text-navy-600"></i> ประเภทครุภัณฑ์</h3><button onclick="openCatForm()" class="btn-primary btn-sm flex items-center gap-1"><i class="fi fi-rr-plus"></i> เพิ่ม</button></div>';
-  html += '<div class="card-body p-0">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-2 text-left">ชื่อ</th><th class="px-4 py-2 text-left hidden sm:table-cell">คำอธิบาย</th><th class="px-4 py-2 text-center">Serial</th><th class="px-4 py-2 text-center">ซอฟต์แวร์</th><th class="px-4 py-2 text-center">สถานะ</th><th class="px-4 py-2 text-center w-24">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-  if (!_settingsCats.length) html += '<tr><td colspan="6" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
-  _settingsCats.forEach(function(c){
-    html += '<tr><td class="px-4 py-2 font-medium text-gray-800">' + escHtml(c.name) + '</td>';
-    html += '<td class="px-4 py-2 text-gray-500 text-xs hidden sm:table-cell">' + escHtml(c.description||'') + '</td>';
-    html += '<td class="px-4 py-2 text-center">' + (c.requires_serial===true?'<span class="text-amber-600 text-xs font-semibold">บังคับ</span>':'<span class="text-gray-300 text-xs">-</span>') + '</td>';
-    html += '<td class="px-4 py-2 text-center">' + (c.is_software===true?'<span class="text-blue-600 text-xs font-semibold">ใช่</span>':'<span class="text-gray-300 text-xs">-</span>') + '</td>';
-    html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + (c.is_active!==false?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500') + '">' + (c.is_active!==false?'ใช้งาน':'ปิดใช้งาน') + '</span></td>';
-    html += '<td class="px-4 py-2 text-center"><div class="flex gap-1 justify-center"><button onclick="openCatForm(' + JSON.stringify(c).replace(/"/g,'&quot;') + ')" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button><button onclick="deleteCatConfirm(\'' + c.id + '\',\'' + escHtml(c.name).replace(/'/g,"\\'") + '\')" class="w-7 h-7 bg-red-100 text-red-700 rounded-lg flex items-center justify-center hover:bg-red-200"><i class="fi fi-rr-trash text-xs"></i></button></div></td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-
-  // ===== MASTER DATA: Asset Types =====
-  html += '<div class="card"><div class="card-header flex items-center justify-between"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-box text-navy-600"></i> ชนิดครุภัณฑ์</h3><button onclick="openTypeForm()" class="btn-primary btn-sm flex items-center gap-1"><i class="fi fi-rr-plus"></i> เพิ่ม</button></div>';
-  html += '<div class="card-body p-0">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-2 text-left">ชื่อ</th><th class="px-4 py-2 text-left hidden sm:table-cell">ประเภท</th><th class="px-4 py-2 text-center">สถานะ</th><th class="px-4 py-2 text-center w-24">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-  if (!_settingsTypes.length) html += '<tr><td colspan="4" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
-  _settingsTypes.forEach(function(t){
-    var cat = _settingsCats.find(function(x){ return x.id === t.category_id; });
-    html += '<tr><td class="px-4 py-2 font-medium text-gray-800">' + escHtml(t.name) + '</td>';
-    html += '<td class="px-4 py-2 text-gray-500 text-xs hidden sm:table-cell">' + escHtml(cat?cat.name:'-') + '</td>';
-    html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + (t.is_active!==false?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500') + '">' + (t.is_active!==false?'ใช้งาน':'ปิดใช้งาน') + '</span></td>';
-    html += '<td class="px-4 py-2 text-center"><div class="flex gap-1 justify-center"><button onclick="openTypeForm(' + JSON.stringify(t).replace(/"/g,'&quot;') + ')" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button><button onclick="deleteTypeConfirm(\'' + t.id + '\',\'' + escHtml(t.name).replace(/'/g,"\\'") + '\')" class="w-7 h-7 bg-red-100 text-red-700 rounded-lg flex items-center justify-center hover:bg-red-200"><i class="fi fi-rr-trash text-xs"></i></button></div></td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-
-  // ===== MASTER DATA: Amphoes =====
-  html += '<div class="card"><div class="card-header flex items-center justify-between"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-building text-navy-600"></i> หน่วยงาน</h3><button onclick="openAmphoeForm()" class="btn-primary btn-sm flex items-center gap-1"><i class="fi fi-rr-plus"></i> เพิ่ม</button></div>';
-  html += '<div class="card-body p-0">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-2 text-left">ชื่อ</th><th class="px-4 py-2 text-left hidden sm:table-cell">รหัส</th><th class="px-4 py-2 text-center">สถานะ</th><th class="px-4 py-2 text-center w-24">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-  if (!_settingsAmphoes.length) html += '<tr><td colspan="4" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
-  _settingsAmphoes.forEach(function(a){
-    html += '<tr><td class="px-4 py-2 font-medium text-gray-800">' + escHtml(a.name) + '</td>';
-    html += '<td class="px-4 py-2 text-gray-500 text-xs hidden sm:table-cell">' + escHtml(a.code||'') + '</td>';
-    html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + (a.is_active!==false?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500') + '">' + (a.is_active!==false?'ใช้งาน':'ปิดใช้งาน') + '</span></td>';
-    html += '<td class="px-4 py-2 text-center"><div class="flex gap-1 justify-center"><button onclick="openAmphoeForm(' + JSON.stringify(a).replace(/"/g,'&quot;') + ')" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button><button onclick="deleteAmphoeConfirm(\'' + a.id + '\',\'' + escHtml(a.name).replace(/'/g,"\\'") + '\')" class="w-7 h-7 bg-red-100 text-red-700 rounded-lg flex items-center justify-center hover:bg-red-200"><i class="fi fi-rr-trash text-xs"></i></button></div></td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-
-  // ===== MASTER DATA: Fiscal Years =====
-  html += '<div class="card"><div class="card-header flex items-center justify-between"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-calendar text-navy-600"></i> ปีงบประมาณ</h3><button onclick="openFiscalYearForm()" class="btn-primary btn-sm flex items-center gap-1"><i class="fi fi-rr-plus"></i> เพิ่ม</button></div>';
-  html += '<div class="card-body p-0">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-2 text-left">ปี พ.ศ.</th><th class="px-4 py-2 text-left hidden sm:table-cell">ปี ค.ศ.</th><th class="px-4 py-2 text-center">สถานะ</th><th class="px-4 py-2 text-center w-24">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-  if (!_settingsFiscalYears.length) html += '<tr><td colspan="4" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
-  _settingsFiscalYears.forEach(function(f){
-    html += '<tr><td class="px-4 py-2 font-medium text-gray-800">' + escHtml(f.year||'') + '</td>';
-    html += '<td class="px-4 py-2 text-gray-500 text-xs hidden sm:table-cell">' + escHtml(f.year?String(parseInt(f.year)-543):'') + '</td>';
-    html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + (f.is_active!==false?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500') + '">' + (f.is_active!==false?'ใช้งาน':'ปิดใช้งาน') + '</span></td>';
-    html += '<td class="px-4 py-2 text-center"><div class="flex gap-1 justify-center"><button onclick="openFiscalYearForm(' + JSON.stringify(f).replace(/"/g,'&quot;') + ')" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button><button onclick="deleteFiscalYearConfirm(\'' + f.id + '\',\'' + escHtml(String(f.year||'')).replace(/'/g,"\\'") + '\')" class="w-7 h-7 bg-red-100 text-red-700 rounded-lg flex items-center justify-center hover:bg-red-200"><i class="fi fi-rr-trash text-xs"></i></button></div></td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-
   html += '<div class="flex justify-end gap-3">';
   html += '<button onclick="renderSettings()" class="btn-secondary"><i class="fi fi-rr-refresh mr-1"></i>รีเซ็ต</button>';
   html += '<button onclick="saveSettings()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการตั้งค่า</button></div>';
@@ -3330,8 +2995,7 @@ function saveSettings() {
     telegram_bot_token:    (document.getElementById('cfgTgToken')||{}).value||'',
     telegram_chat_id:      (document.getElementById('cfgTgChatId')||{}).value||'',
     low_stock_threshold:   parseInt((document.getElementById('cfgLowStock')||{}).value||5),
-    app_logo:              (document.getElementById('cfgLogoFileId')||{}).value||_configLogoFileId||'',
-    drive_folder_id:       (document.getElementById('cfgDriveFolderId')||{}).value||''
+    app_logo:              (document.getElementById('cfgLogoFileId')||{}).value||_configLogoFileId||''
   };
   showLoading('กำลังบันทึก...');
   callAPI('saveConfig', AUTH.token, data).then(function(res) {
@@ -3371,7 +3035,7 @@ function handleLogoUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 20 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 20MB'); input.value=''; return; }
+  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2MB'); input.value=''; return; }
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -3483,18 +3147,15 @@ function _getAssetTypeName(id) { var t = _assetTypes.find(function(x){ return x.
 function _getAmphoeName(id) { var a = _amphoes.find(function(x){ return x.id === id; }); return a ? a.name : '-'; }
 function _fmtMoney(n) { return Number(n||0).toLocaleString('th-TH', {maximumFractionDigits:0}) + ' บ.'; }
 
-var _assetFiscalYears = [];
 function _loadAssetRefs(cb) {
   Promise.all([
     callAPI('getAssetCategories', AUTH.token),
     callAPI('getAssetTypes', AUTH.token),
-    callAPI('getAmphoes', AUTH.token),
-    callAPI('getFiscalYears', AUTH.token)
+    callAPI('getAmphoes', AUTH.token)
   ]).then(function(res) {
     _assetCats = res[0].data || [];
     _assetTypes = res[1].data || [];
     _amphoes = res[2].data || [];
-    _assetFiscalYears = res[3].data || [];
     if (cb) cb();
   });
 }
@@ -3506,15 +3167,13 @@ function renderAssets() {
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetCategories', AUTH.token),
     callAPI('getAssetTypes', AUTH.token),
-    callAPI('getAmphoes', AUTH.token),
-    callAPI('getFiscalYears', AUTH.token)
+    callAPI('getAmphoes', AUTH.token)
   ]).then(function(res) {
     hideLoading();
     _assetData = res[0].data || [];
     _assetCats = res[1].data || [];
     _assetTypes = res[2].data || [];
     _amphoes = res[3].data || [];
-    _assetFiscalYears = res[4].data || [];
     _assetPage = 1;
     buildAssetsPage();
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
@@ -3573,7 +3232,7 @@ function buildAssetsPage() {
     html += '<td class="px-4 py-2.5 text-right text-sm font-medium text-gray-800">' + _fmtMoney(a.unit_price) + '</td>';
     html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + _assetStatusClass(a.status) + '">' + _assetStatusLabel(a.status) + '</span></td>';
     html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
-    html += '<button onclick="window.open(\'?public_asset_id=' + a.id + '\', \'_blank\')" title="ดูรายละเอียด" class="w-7 h-7 bg-gray-100 text-gray-600 rounded-lg flex items-center justify-center hover:bg-gray-200"><i class="fi fi-rr-eye text-xs"></i></button>';
+    html += '<button onclick="openAssetDetail(\'' + a.id + '\')" title="ดูรายละเอียด" class="w-7 h-7 bg-gray-100 text-gray-600 rounded-lg flex items-center justify-center hover:bg-gray-200"><i class="fi fi-rr-eye text-xs"></i></button>';
     html += '<button onclick="printAssetQR(\'' + a.id + '\')" title="พิมพ์ QR" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-print text-xs"></i></button>';
     if (isAdmin) {
       html += '<button onclick="openAssetForm(\'' + a.id + '\')" title="แก้ไข" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button>';
@@ -3595,7 +3254,7 @@ function buildAssetsPage() {
     html += '<div class="flex gap-1.5 mt-1"><span class="px-2 py-0.5 rounded-full text-xs ' + _assetStatusClass(a.status) + '">' + _assetStatusLabel(a.status) + '</span>';
     html += '<span class="text-xs text-gray-500">' + _fmtMoney(a.unit_price) + '</span></div></div>';
     html += '<div class="flex gap-1">';
-    html += '<button onclick="window.open(\'?public_asset_id=' + a.id + '\', \'_blank\')" class="w-8 h-8 bg-gray-100 text-gray-600 rounded-xl flex items-center justify-center"><i class="fi fi-rr-eye text-sm"></i></button>';
+    html += '<button onclick="openAssetDetail(\'' + a.id + '\')" class="w-8 h-8 bg-gray-100 text-gray-600 rounded-xl flex items-center justify-center"><i class="fi fi-rr-eye text-sm"></i></button>';
     if (isAdmin) html += '<button onclick="openAssetForm(\'' + a.id + '\')" class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-edit text-sm"></i></button>';
     html += '</div></div>';
   });
@@ -3664,7 +3323,7 @@ function openAssetForm(id) {
   body += '</div>';
   body += '<div><label class="form-label">รายการ/คำอธิบาย *</label><input type="text" id="aDesc" value="' + escHtml(a?a.description:'') + '" class="form-input"></div>';
   body += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">';
-  body += '<div><label class="form-label">ประเภทครุภัณฑ์</label><select id="aCategory" class="form-input" onchange="_onAssetCategoryChange()">';
+  body += '<div><label class="form-label">ประเภทครุภัณฑ์</label><select id="aCategory" class="form-input" onchange="_loadAssetTypes()">';
   body += '<option value="">เลือกประเภท</option>';
   _assetCats.forEach(function(c){ body += '<option value="' + c.id + '"' + ((a&&a.category_id===c.id)?' selected':'') + '>' + escHtml(c.name) + '</option>'; });
   body += '</select></div>';
@@ -3672,18 +3331,7 @@ function openAssetForm(id) {
   body += '</div>';
   body += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">';
   body += '<div><label class="form-label">ยี่ห้อ/รุ่น/ขนาด</label><input type="text" id="aBrand" value="' + escHtml(a?a.brand_model:'') + '" class="form-input"></div>';
-  body += '<div><label class="form-label" id="aSerialLabel">หมายเลขเครื่อง</label><input type="text" id="aSerial" value="' + escHtml(a?a.serial_number:'') + '" class="form-input"></div>';
-  body += '</div>';
-  body += '<div id="aInstalledWrap" class="hidden">';
-  body += '<div><label class="form-label">ติดตั้งอยู่ที่ครุภัณฑ์</label><select id="aInstalledAsset" class="form-input">';
-  body += '<option value="">เลือกครุภัณฑ์</option>';
-  _assetData.forEach(function(asset){
-    var cat = _assetCats.find(function(x){ return x.id === asset.category_id; });
-    if (cat && cat.is_software !== true && cat.requires_serial === true) {
-      body += '<option value="' + asset.id + '"' + ((a&&a.installed_asset_id===asset.id)?' selected':'') + '>' + escHtml(asset.asset_code||'') + ' - ' + escHtml(asset.description||'') + '</option>';
-    }
-  });
-  body += '</select></div>';
+  body += '<div><label class="form-label">หมายเลขเครื่อง</label><input type="text" id="aSerial" value="' + escHtml(a?a.serial_number:'') + '" class="form-input"></div>';
   body += '</div>';
   body += '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">';
   body += '<div><label class="form-label">วันที่ได้รับ</label><input type="date" id="aReceiveDate" value="' + escHtml(a?a.receive_date:'') + '" class="form-input"></div>';
@@ -3696,15 +3344,7 @@ function openAssetForm(id) {
   body += '<option value="">เลือกหน่วยงาน</option>';
   _amphoes.forEach(function(am){ body += '<option value="' + am.id + '"' + ((a&&a.amphoe_id===am.id)?' selected':'') + '>' + escHtml(am.name) + '</option>'; });
   body += '</select></div>';
-  body += '<div><label class="form-label">ปีงบประมาณ</label><select id="aFiscal" class="form-input">';
-  var currentFy = a ? String(a.fiscal_year||'') : '';
-  var defaultFy = currentFy || String(new Date().getFullYear() + 543);
-  var fyList = _assetFiscalYears.length ? _assetFiscalYears.map(function(f){ return f.year; }) : [defaultFy];
-  fyList.forEach(function(y){
-    if (!y) return;
-    body += '<option value="' + y + '"' + (defaultFy===y?' selected':'') + '>' + y + '</option>';
-  });
-  body += '</select></div>';
+  body += '<div><label class="form-label">ปีงบประมาณ</label><input type="number" id="aFiscal" value="' + (a?a.fiscal_year:'') + '" class="form-input"></div>';
   body += '</div>';
   body += '<div><label class="form-label">สถานที่ติดตั้ง/จัดเก็บ</label><input type="text" id="aLocation" value="' + escHtml(a?a.location:'') + '" class="form-input"></div>';
   body += '<div><label class="form-label">สถานะ</label><select id="aStatus" class="form-input">';
@@ -3715,7 +3355,7 @@ function openAssetForm(id) {
   body += '</select></div>';
   body += '<div><label class="form-label">รูปภาพ</label><input type="file" id="aImage" accept="image/*" onchange="_uploadAssetImage(this)" class="form-input py-1.5">';
   if (_assetImageFileId) {
-    body += '<div class="mt-2"><img src="' + imgUrl(_assetImageFileId) + '" class="h-24 rounded-xl border border-gray-200" loading="lazy"></div>';
+    body += '<div class="mt-2"><img src="' + imgUrl(_assetImageFileId) + '" class="h-24 rounded-xl border border-gray-200"></div>';
   }
   body += '</div>';
   body += '<div><label class="form-label">หมายเหตุ</label><textarea id="aNotes" class="form-input" rows="2">' + escHtml(a?a.notes:'') + '</textarea></div>';
@@ -3739,16 +3379,6 @@ function _loadAssetTypes() {
   sel.innerHTML = html;
 }
 
-function _onAssetCategoryChange() {
-  _loadAssetTypes();
-  var catId = (document.getElementById('aCategory')||{}).value||'';
-  var cat = _assetCats.find(function(c){ return c.id === catId; });
-  var serialLabel = document.getElementById('aSerialLabel');
-  var installedWrap = document.getElementById('aInstalledWrap');
-  if (serialLabel) serialLabel.textContent = (cat && cat.requires_serial===true) ? 'หมายเลขเครื่อง/Serial/License *' : 'หมายเลขเครื่อง';
-  if (installedWrap) installedWrap.classList.toggle('hidden', !(cat && cat.is_software===true));
-}
-
 function _uploadAssetImage(input) {
   var file = input.files[0];
   if (!file) return;
@@ -3769,7 +3399,6 @@ function _uploadAssetImage(input) {
 }
 
 function _readAssetForm() {
-  var installedAssetEl = document.getElementById('aInstalledAsset');
   return {
     asset_code: (document.getElementById('aAssetCode')||{}).value||'',
     asset_number: (document.getElementById('aAssetNumber')||{}).value||'',
@@ -3787,22 +3416,13 @@ function _readAssetForm() {
     status: (document.getElementById('aStatus')||{}).value||'active',
     fiscal_year: parseInt((document.getElementById('aFiscal')||{}).value||0),
     notes: (document.getElementById('aNotes')||{}).value||'',
-    image_url: _assetImageFileId || '',
-    installed_asset_id: installedAssetEl ? (installedAssetEl.value||'') : ''
+    image_url: _assetImageFileId || ''
   };
-}
-
-function _validateAssetForm(data) {
-  if (!data.asset_code.trim() || !data.description.trim()) { showError('กรุณากรอกรหัสครุภัณฑ์และรายการ'); return false; }
-  var cat = _assetCats.find(function(c){ return c.id === data.category_id; });
-  if (cat && cat.requires_serial===true && !data.serial_number.trim()) { showError('ประเภทนี้ต้องกรอกหมายเลขเครื่อง/Serial/License'); return false; }
-  if (cat && cat.is_software===true && !data.installed_asset_id.trim()) { showError('ซอฟต์แวร์ต้องเลือกครุภัณฑ์ที่ติดตั้ง'); return false; }
-  return true;
 }
 
 function submitAddAsset() {
   var data = _readAssetForm();
-  if (!_validateAssetForm(data)) return;
+  if (!data.asset_code.trim() || !data.description.trim()) { showError('กรุณากรอกรหัสครุภัณฑ์และรายการ'); return; }
   showLoading('กำลังบันทึก...');
   callAPI('saveAsset', AUTH.token, data).then(function(res) {
     hideLoading(); closeModal();
@@ -3812,7 +3432,7 @@ function submitAddAsset() {
 }
 function submitEditAsset(id) {
   var data = _readAssetForm();
-  if (!_validateAssetForm(data)) return;
+  if (!data.asset_code.trim() || !data.description.trim()) { showError('กรุณากรอกรหัสครุภัณฑ์และรายการ'); return; }
   data.id = id;
   showLoading('กำลังบันทึก...');
   callAPI('saveAsset', AUTH.token, data).then(function(res) {
@@ -3835,7 +3455,7 @@ function printAssetQR(id) {
   var a = _assetData.find(function(x){ return x.id === id; });
   if (!a) return;
   var baseUrl = window.location.origin + window.location.pathname;
-  var qrUrl = baseUrl + '?public_asset_id=' + id;
+  var qrUrl = baseUrl + '?action=asset&id=' + id;
   var body = '<div class="text-center">';
   body += '<p class="font-semibold text-gray-700 mb-1">' + escHtml(a.description) + '</p>';
   body += '<p class="text-xs text-gray-500 mb-3">' + escHtml(a.asset_code||'') + '</p>';
@@ -3845,393 +3465,6 @@ function printAssetQR(id) {
   setTimeout(function() {
     new QRCode(document.getElementById('assetQrWrap'), { text: qrUrl, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.H });
   }, 100);
-}
-
-// ===== PUBLIC ASSET DETAIL (NO LOGIN) =====
-function renderPublicAssetPage() {
-  var _s = function(id,prop,val){ var el=document.getElementById(id); if(el) el.style[prop]=val; };
-  var el = document.getElementById('loginPage'); if(el) el.classList.add('hidden');
-  var ms = document.getElementById('mainShell'); if(ms) ms.classList.remove('hidden');
-  _s('sidebar','display','none');
-  _s('topbar','display','none');
-  var mc = document.getElementById('mainContent');
-  if (mc) { mc.classList.remove('lg:ml-64'); mc.style.cssText += ';margin-left:0 !important'; }
-
-  showLoading('กำลังโหลดข้อมูล...');
-  Promise.all([
-    callAPI('getPublicAssetDetail', _PUBLIC_ASSET_ID),
-    callAPI('getConfig')
-  ]).then(function(results) {
-    hideLoading();
-    var detailRes = results[0];
-    var cfg = results[1].data || {};
-
-    if (!detailRes.success || !detailRes.data) {
-      document.getElementById('mainContent').innerHTML = '<div class="p-8 text-center text-gray-500">ไม่พบข้อมูลครุภัณฑ์</div>';
-      return;
-    }
-    var d = detailRes.data;
-    var a = d.asset;
-    var cats = d.categories || [];
-    var types = d.types || [];
-    var amphoes = d.amphoes || [];
-    var assetMaint = d.maintenance || [];
-    var cat = cats.find(function(c){ return c.id === a.category_id; });
-    var type = types.find(function(t){ return t.id === a.type_id; });
-    var amphoe = amphoes.find(function(am){ return am.id === a.amphoe_id; });
-
-    var usefulLife = type && type.useful_life ? parseInt(type.useful_life) : 0;
-    var depRate = type && type.depreciation_rate ? parseFloat(type.depreciation_rate) : 0;
-    var price = parseFloat(a.unit_price || 0);
-    var annualDep = depRate > 0 ? price * (depRate / 100) : (usefulLife > 0 ? price / usefulLife : 0);
-    var monthlyDep = annualDep / 12;
-
-    // Compute depreciation schedule
-    var schedule = [];
-    var bookValue = price;
-    for (var y = 1; y <= usefulLife; y++) {
-      var dep = annualDep;
-      if (y === usefulLife) dep = bookValue - 1; // salvage value ~1 Baht
-      if (dep > bookValue) dep = bookValue;
-      bookValue -= dep;
-      if (bookValue < 0) { dep += bookValue; bookValue = 0; }
-      schedule.push({ year: y, depreciation: dep, accumulated: price - bookValue, bookValue: bookValue });
-    }
-
-    var html = '<div class="fade-in max-w-3xl mx-auto p-4 pb-16">';
-    // Header
-    html += '<div class="flex items-start gap-4 mb-6">';
-    var qrUrl = window.location.origin + window.location.pathname + '?public_asset_id=' + a.id;
-    html += '<div id="publicQr" class="flex-shrink-0"></div>';
-    html += '<div class="flex-1 min-w-0">';
-    html += '<p class="text-xs text-gray-500">' + escHtml(cat ? cat.name : '-') + ' / ' + escHtml(type ? type.name : '-') + '</p>';
-    html += '<h2 class="text-lg font-bold text-gray-800 leading-tight">' + escHtml(a.description) + '</h2>';
-    html += '<p class="text-sm text-gray-600 mt-1">' + escHtml(a.brand_model||'') + '</p>';
-    html += '<div class="flex items-center gap-2 mt-2"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + _assetStatusClass(a.status) + '">' + _assetStatusLabel(a.status) + '</span></div>';
-    html += '</div></div>';
-
-    // Code badge
-    html += '<div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">';
-    html += '<div class="flex items-center justify-between"><div><p class="text-xs text-gray-500">รหัสครุภัณฑ์</p><p class="text-sm font-semibold text-navy-700">' + escHtml(a.asset_code||'-') + '</p></div>';
-    html += '<button onclick="printAssetRegister(\'' + a.id + '\')" class="btn-primary btn-sm"><i class="fi fi-rr-print mr-1"></i>ทะเบียนคุมฯ</button></div>';
-    html += '</div>';
-
-    // Info sections
-    html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">';
-    html += '<div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2"><i class="fi fi-rr-info text-navy-600 text-sm"></i><span class="text-sm font-semibold text-gray-700">ข้อมูลทั่วไป</span></div>';
-    html += '<div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">';
-    html += _detailRow('วันที่ได้รับ', formatDate(a.receive_date));
-    html += _detailRow('เลขที่ GFMIS', a.gfmis_number||'-');
-    html += _detailRow('Serial / License', a.serial_number||'-');
-    html += _detailRow('สถานที่ตั้ง', a.location||'-');
-    html += _detailRow('ติดตั้งที่ครุภัณฑ์', a.installed_location||'-');
-    html += _detailRow('หน่วยงาน', amphoe ? amphoe.name : '-');
-    html += _detailRow('ปีงบประมาณ', a.fiscal_year||'-');
-    html += _detailRow('วิธีการได้มา', a.acquisition_method||'-');
-    html += '</div></div>';
-
-    // Responsible person / owner
-    html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">';
-    html += '<div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2"><i class="fi fi-rr-user text-navy-600 text-sm"></i><span class="text-sm font-semibold text-gray-700">ผู้ครอบครอง / ผู้รับผิดชอบ</span></div>';
-    html += '<div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">';
-    html += _detailRow('ผู้ใช้งาน / ผู้ครอบครอง', a.responsible_person || '-');
-    html += _detailRow('ตำแหน่ง / สถานที่ใช้งาน', a.installed_location || a.location || '-');
-    html += _detailRow('หน่วยงาน', amphoe ? amphoe.name : '-');
-    html += _detailRow('หมายเหตุ', a.notes || '-');
-    html += '</div></div>';
-
-    // Vendor
-    html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">';
-    html += '<div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2"><i class="fi fi-rr-building text-navy-600 text-sm"></i><span class="text-sm font-semibold text-gray-700">ข้อมูลผู้มอบ / ผู้ขาย</span></div>';
-    html += '<div class="p-4 text-sm"><p class="font-medium text-gray-800">' + escHtml(a.vendor_name || a.supplier_name || '-') + '</p><p class="text-xs text-gray-500 mt-1">' + escHtml(a.vendor_address||'') + '</p></div>';
-    html += '</div>';
-
-    // Depreciation summary
-    html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">';
-    html += '<div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2"><i class="fi fi-rr-chart-pie-alt text-navy-600 text-sm"></i><span class="text-sm font-semibold text-gray-700">ข้อมูลการเสื่อมราคา</span></div>';
-    html += '<div class="p-4">';
-    html += '<div class="grid grid-cols-3 gap-3 text-center">';
-    html += '<div class="bg-gray-50 rounded-lg p-3"><p class="text-xs text-gray-500">ราคา</p><p class="text-sm font-bold text-gray-800">' + _fmtMoney(price) + '</p></div>';
-    html += '<div class="bg-red-50 rounded-lg p-3"><p class="text-xs text-gray-500">ค่าเสื่อม/เดือน</p><p class="text-sm font-bold text-red-600">' + _fmtMoney(monthlyDep) + '</p></div>';
-    html += '<div class="bg-green-50 rounded-lg p-3"><p class="text-xs text-gray-500">มูลค่าสุทธิ</p><p class="text-sm font-bold text-green-600">' + _fmtMoney(schedule.length ? schedule[schedule.length-1].bookValue : price) + '</p></div>';
-    html += '</div>';
-    // Schedule table
-    if (schedule.length) {
-      html += '<div class="mt-4 overflow-x-auto">';
-      html += '<table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600"><tr><th class="px-2 py-2 text-left">ปีที่</th><th class="px-2 py-2 text-right">ค่าเสื่อมปี (บ)</th><th class="px-2 py-2 text-right">ค่าเสื่อมสะสม (บ)</th><th class="px-2 py-2 text-right">มูลค่าสุทธิ (บ)</th></tr></thead><tbody class="divide-y">';
-      schedule.forEach(function(row){
-        html += '<tr><td class="px-2 py-2">' + row.year + '</td><td class="px-2 py-2 text-right">' + Number(row.depreciation).toLocaleString('th-TH',{maximumFractionDigits:2}) + '</td><td class="px-2 py-2 text-right">' + Number(row.accumulated).toLocaleString('th-TH',{maximumFractionDigits:2}) + '</td><td class="px-2 py-2 text-right">' + Number(row.bookValue).toLocaleString('th-TH',{maximumFractionDigits:2}) + '</td></tr>';
-      });
-      html += '</tbody></table></div>';
-    }
-    html += '</div></div>';
-
-    // Maintenance history
-    html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">';
-    html += '<div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2"><i class="fi fi-rr-wrench text-navy-600 text-sm"></i><span class="text-sm font-semibold text-gray-700">ประวัติการซ่อมบำรุง</span></div>';
-    if (assetMaint.length) {
-      html += '<div class="overflow-x-auto"><table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600"><tr><th class="px-3 py-2 text-left">วันที่</th><th class="px-3 py-2 text-left">รายการ</th><th class="px-3 py-2 text-right">ค่าใช้จ่าย</th></tr></thead><tbody class="divide-y">';
-      assetMaint.forEach(function(m){
-        html += '<tr><td class="px-3 py-2">' + formatDate(m.maintenance_date) + '</td><td class="px-3 py-2">' + escHtml(m.description||'-') + '</td><td class="px-3 py-2 text-right">' + _fmtMoney(m.cost||0) + '</td></tr>';
-      });
-      html += '</tbody></table></div>';
-    } else {
-      html += '<div class="p-6 text-center text-gray-400 text-sm"><i class="fi fi-rr-shield-check text-2xl mb-2 block"></i>ยังไม่มีประวัติการซ่อมบำรุง</div>';
-    }
-    html += '</div>';
-
-    html += '</div>';
-    document.getElementById('mainContent').innerHTML = html;
-    setTimeout(function() {
-      new QRCode(document.getElementById('publicQr'), { text: qrUrl, width: 100, height: 100, correctLevel: QRCode.CorrectLevel.H });
-    }, 100);
-  }).catch(function(err) {
-    hideLoading();
-    document.getElementById('mainContent').innerHTML = '<div class="p-8 text-center text-gray-500">โหลดข้อมูลไม่สำเร็จ</div>';
-  });
-}
-
-function printAssetRegister(id) {
-  var baseUrl = window.location.origin + window.location.pathname;
-  showLoading('กำลังเตรียมข้อมูล...');
-  Promise.all([
-    callAPI('getPublicAssetDetail', id),
-    callAPI('getConfig')
-  ]).then(function(results) {
-    hideLoading();
-    var detailRes = results[0];
-    var cfg = results[1].data || {};
-    if (!detailRes.success || !detailRes.data) { showError('ไม่พบข้อมูล'); return; }
-    var d = detailRes.data;
-    var a = d.asset;
-    var cats = d.categories || [];
-    var types = d.types || [];
-    var amphoes = d.amphoes || [];
-    var cat = cats.find(function(c){ return c.id === a.category_id; });
-    var type = types.find(function(t){ return t.id === a.type_id; });
-    var amphoe = amphoes.find(function(am){ return am.id === a.amphoe_id; });
-    var orgName = cfg.app_name || cfg.organization_name || 'ระบบวัสดุสิ้นเปลือง';
-    var amphoeShort = amphoe ? amphoe.name : '';
-    var logoUrl = cfg.app_logo ? imgUrl(cfg.app_logo) : '';
-
-    var usefulLife = type && type.useful_life ? parseInt(type.useful_life) : 0;
-    var depRate = type && type.depreciation_rate ? parseFloat(type.depreciation_rate) : 0;
-    var price = parseFloat(a.unit_price || 0);
-    var annualDep = depRate > 0 ? price * (depRate / 100) : (usefulLife > 0 ? price / usefulLife : 0);
-
-    var schedule = [];
-    var bookValue = price;
-    for (var y = 1; y <= usefulLife; y++) {
-      var dep = annualDep;
-      if (y === usefulLife) dep = bookValue - 1;
-      if (dep > bookValue) dep = bookValue;
-      bookValue -= dep;
-      if (bookValue < 0) { dep += bookValue; bookValue = 0; }
-      schedule.push({ year: y, depreciation: dep, accumulated: price - bookValue, bookValue: bookValue });
-    }
-
-    var qrUrl = baseUrl + '?public_asset_id=' + id;
-    try {
-      var qrDiv = document.createElement('div');
-      qrDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
-      document.body.appendChild(qrDiv);
-      new QRCode(qrDiv, { text: qrUrl, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.H });
-      setTimeout(function(){
-        var qrDataUrl = '';
-        var canvas = qrDiv.querySelector('canvas');
-        var img = qrDiv.querySelector('img');
-        if (canvas && canvas.toDataURL) qrDataUrl = canvas.toDataURL('image/png');
-        else if (img && img.src) qrDataUrl = img.src;
-        document.body.removeChild(qrDiv);
-        _openRegisterModal(a, cat, type, amphoe, orgName, logoUrl, schedule, usefulLife, depRate, price, annualDep, qrDataUrl, qrUrl);
-      }, 350);
-    } catch(e) {
-      _openRegisterModal(a, cat, type, amphoe, orgName, logoUrl, schedule, usefulLife, depRate, price, annualDep, '', qrUrl);
-    }
-  }).catch(function() {
-    hideLoading();
-    showError('โหลดข้อมูลไม่สำเร็จ');
-  });
-}
-
-function _openRegisterModal(a, cat, type, amphoe, orgName, logoUrl, schedule, usefulLife, depRate, price, annualDep, qrDataUrl, qrUrl) {
-  var inner = _buildRegisterHTML(a, cat, type, amphoe, orgName, logoUrl, schedule, usefulLife, depRate, price, qrDataUrl);
-
-  // Store for actual print
-  window._lastRegisterPrintHTML = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ทะเบียนคุมสินทรัพย์รายตัว</title>' +
-    '<style>' +
-    '@page{size:A4 landscape;margin:0}' +
-    'html{margin:0;padding:0}' +
-    'body{font-family:sarabun,sans-serif;margin:0;padding:0;background:#fff;color:#000;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
-    '*{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}' +
-    '.print-wrap{padding:14mm 16mm;width:100%;max-width:100%}' +
-    '.print-wrap div[style*="display:flex"]{display:flex !important}' +
-    'table{border-collapse:collapse;width:100%;table-layout:fixed}' +
-    'th,td{border:1px solid #999;padding:2px 3px;font-size:9px;word-break:break-word;overflow-wrap:break-word;vertical-align:top;overflow:hidden}' +
-    'th{background:#f3f4f6 !important;text-align:center;font-weight:600}' +
-    'img{max-width:100%;height:auto}' +
-    '@media print{.no-print{display:none}}' +
-    '</style>' +
-    '</head><body><div class="print-wrap">' + inner + '</div></body></html>';
-
-  // Build custom wide overlay
-  var overlay = document.createElement('div');
-  overlay.id = 'regModalOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;';
-  overlay.onclick = function(e){ if(e.target===overlay) _closeRegisterModal(); };
-
-  var box = document.createElement('div');
-  box.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:900px;display:flex;flex-direction:column;font-family:sarabun,sans-serif;';
-
-  // Header
-  var hdr = '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #e5e7eb;flex-shrink:0;">';
-  hdr += '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#16a34a;font-size:16px;">&#128196;</span><span style="font-weight:700;font-size:15px;color:#1f2937;">ทะเบียนคุมสินทรัพย์รายตัว</span></div>';
-  hdr += '<div style="display:flex;align-items:center;gap:8px;">';
-  hdr += '<button onclick="_doPrintRegister()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;"><span>&#128424;</span> พิมพ์</button>';
-  hdr += '<button onclick="_closeRegisterModal()" style="display:inline-flex;align-items:center;gap:4px;padding:8px 14px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:13px;cursor:pointer;">&#10005; ปิด</button>';
-  hdr += '</div></div>';
-
-  // Body with scrollable content
-  var bdy = '<div style="padding:24px;overflow-y:auto;max-height:calc(90vh - 80px);">' + inner + '</div>';
-
-  box.innerHTML = hdr + bdy;
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-}
-
-function _buildRegisterHTML(a, cat, type, amphoe, orgName, logoUrl, schedule, usefulLife, depRate, price, qrDataUrl) {
-  var F = function(n){ return Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-  var TDSTYLE = 'border:1px solid #999;padding:5px 7px;vertical-align:top;word-break:break-word;';
-  var td = function(label, value, colspan) {
-    return '<td' + (colspan ? ' colspan="'+colspan+'"' : '') + ' style="' + TDSTYLE + '">'
-      + '<div style="font-size:9px;color:#666;margin-bottom:2px;">' + label + '</div>'
-      + '<div style="font-weight:600;font-size:11px;">' + escHtml(String(value||'-')) + '</div>'
-      + '</td>';
-  };
-
-  var html = '';
-
-  // ── Header: flex 3-column — org | title | QR ──
-  html += '<div style="display:flex;align-items:center;width:100%;margin-bottom:14px;gap:0;">';
-  // Left: org (flex: 1)
-  html += '<div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">';
-  if (logoUrl) html += '<img src="' + logoUrl + '" style="width:44px;height:44px;object-fit:contain;flex-shrink:0;">';
-  html += '<div style="min-width:0;">';
-  html += '<div style="font-weight:700;font-size:13px;line-height:1.4;">' + escHtml(orgName) + '</div>';
-  html += '<div style="font-size:11px;color:#555;">' + escHtml(amphoe ? amphoe.name : '') + '</div>';
-  html += '</div></div>';
-  // Center: title (flex: 0 auto — takes exactly what it needs, centered via margin)
-  html += '<div style="flex:1;text-align:center;">';
-  html += '<div style="font-size:18px;font-weight:700;white-space:nowrap;">ทะเบียนคุมสินทรัพย์รายตัว</div>';
-  html += '</div>';
-  // Right: QR (flex: 1, right-align)
-  html += '<div style="flex:1;display:flex;justify-content:flex-end;align-items:center;">';
-  if (qrDataUrl) {
-    html += '<div style="text-align:center;">';
-    html += '<img src="' + qrDataUrl + '" style="width:80px;height:80px;display:block;">';
-    html += '<div style="font-size:9px;color:#888;margin-top:2px;">สแกนดูรายละเอียด</div>';
-    html += '</div>';
-  }
-  html += '</div>';
-  html += '</div>';
-
-  // ── Info table: 5 columns, 3 rows ──
-  // Row 1: 5 cells
-  // Row 2: 4 cells → last one colspan=2 to fill 5
-  // Row 3: วิธีได้มา | ผู้ขาย(colspan=2) | หมายเหตุ(colspan=2)
-  html += '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4px;"><colgroup>';
-  html += '<col style="width:22%"><col style="width:16%"><col style="width:18%"><col style="width:22%"><col style="width:22%">';
-  html += '</colgroup><tbody>';
-
-  // Row 1
-  html += '<tr>';
-  html += td('ประเภทครุภัณฑ์', (cat?cat.name:'') + (type?' / '+type.name:''));
-  html += td('รหัสสินทรัพย์', a.asset_code);
-  html += td('หมายเลข S/N', a.serial_number);
-  html += td('เลขที่ GFMIS', a.gfmis_number);
-  html += td('เลขทะเบียน', a.asset_number);
-  html += '</tr>';
-
-  // Row 2: ลักษณะ/ชื่อ/รุ่น | สถานภาพ | เครื่องประจำตำแหน่ง(colspan=2) | หน่วยงาน
-  html += '<tr>';
-  html += td('ลักษณะ/ชื่อ/รุ่น', a.description + (a.brand_model ? ' '+a.brand_model : ''));
-  html += td('สถานภาพ', a.status === 'active' ? 'กำลังใช้งาน' : a.status === 'damaged' ? 'ชำรุด' : 'จำหน่ายแล้ว');
-  html += td('เครื่องประจำตำแหน่ง', a.installed_location || (amphoe ? 'ส่วนราชการ '+amphoe.name : '-'), 2);
-  html += td('หน่วยงาน', amphoe ? amphoe.name : '-');
-  html += '</tr>';
-
-  // Row 3: วิธีได้มา | ผู้ขาย/ผู้บริจาค(colspan=2) | หมายเหตุ(colspan=2)
-  html += '<tr>';
-  html += td('วิธีการได้มา', a.acquisition_method);
-  html += td('ผู้ขาย/ผู้บริจาค', a.supplier_name || '-', 2);
-  html += td('หมายเหตุ', a.notes || '-', 2);
-  html += '</tr>';
-
-  html += '</tbody></table>';
-
-  // ── Depreciation table ──
-  html += '<div style="font-size:12px;font-weight:700;margin:14px 0 6px;">ตารางค่าเสื่อมราคา</div>';
-  var THSTYLE = 'border:1px solid #999;padding:4px 3px;background:#f3f4f6;text-align:center;font-weight:600;white-space:pre-line;font-size:9px;';
-  var TDNUM = 'border:1px solid #999;padding:3px 4px;font-size:10px;';
-  html += '<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:10px;"><colgroup>';
-  // 13 columns widths (%)
-  [4,8,6,14,6,8,8,5,6,8,8,8,5].forEach(function(w){ html += '<col style="width:'+w+'%">'; });
-  html += '</colgroup><thead><tr>';
-  ['ลำดับ','วัน/เดือน/ปี\n(รับเข้า)','ปีงบ\nประมาณ','รายการ','จำนวน\n(หน่วย)','ราคาต่อ\nหน่วย','มูลค่า\nรวม','อายุใช้\nงาน(ปี)','อัตรา\nค่าเสื่อม%','ค่าเสื่อม\nประจำปี','ค่าเสื่อม\nสะสม','มูลค่า\nสุทธิ','หมาย\nเหตุ'].forEach(function(h){
-    html += '<th style="' + THSTYLE + '">' + h + '</th>';
-  });
-  html += '</tr></thead><tbody>';
-  if (schedule.length) {
-    schedule.forEach(function(row, i) {
-      var bg = i%2===1 ? 'background:#f9fafb;' : '';
-      html += '<tr style="' + bg + '">';
-      html += '<td style="' + TDNUM + 'text-align:center;">' + (i+1) + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:center;">' + escHtml(formatDate(a.receive_date)||'-') + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:center;">' + escHtml(String(a.fiscal_year||'-')) + '</td>';
-      html += '<td style="' + TDNUM + 'word-break:break-word;">' + escHtml(a.description||'') + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:center;">1</td>';
-      html += '<td style="' + TDNUM + 'text-align:right;">' + F(price) + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:right;">' + F(price) + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:center;">' + usefulLife + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:center;">' + (depRate ? depRate.toFixed(2)+'%' : '-') + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:right;">' + F(row.depreciation) + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:right;">' + F(row.accumulated) + '</td>';
-      html += '<td style="' + TDNUM + 'text-align:right;">' + F(row.bookValue) + '</td>';
-      html += '<td style="' + TDNUM + '"></td>';
-      html += '</tr>';
-    });
-  } else {
-    html += '<tr><td colspan="13" style="' + TDNUM + 'text-align:center;color:#999;padding:8px;">ไม่มีข้อมูลค่าเสื่อมราคา</td></tr>';
-  }
-  html += '</tbody></table>';
-
-  // ── Signatures ──
-  html += '<div style="margin-top:40px;display:flex;justify-content:space-around;font-size:11px;">';
-  ['ผู้ตรวจสอบ','ผู้รับผิดชอบสินทรัพย์','เจ้าหน้าที่พัสดุ'].forEach(function(sig){
-    html += '<div style="text-align:center;min-width:140px;">';
-    html += '<div style="height:44px;"></div>';
-    html += '<div style="border-top:1px solid #333;padding-top:6px;">(................................)</div>';
-    html += '<div style="font-weight:600;margin-top:4px;">' + sig + '</div>';
-    html += '<div style="color:#777;margin-top:4px;">วันที่ ....../....../......</div>';
-    html += '</div>';
-  });
-  html += '</div>';
-
-  html += '<div style="text-align:center;font-size:9px;color:#aaa;margin-top:16px;">' + escHtml(orgName) + '</div>';
-  return html;
-}
-
-function _closeRegisterModal() {
-  var el = document.getElementById('regModalOverlay');
-  if (el) el.remove();
-}
-
-function _doPrintRegister() {
-  if (!window._lastRegisterPrintHTML) return;
-  var win = window.open('', '_blank');
-  win.document.write(window._lastRegisterPrintHTML);
-  win.document.close();
-  setTimeout(function(){ win.print(); }, 400);
 }
 
 function renderAssetStatus() {
@@ -4534,694 +3767,127 @@ function deleteCommitteeConfirm(id) {
   }, 'ลบ');
 }
 
-// ===== DEPRECIATION RATES / USEFUL LIFE =====
-function renderDepreciation() {
-  showLoading('โหลดข้อมูล...');
-  Promise.all([
-    callAPI('getAssetCategories', AUTH.token),
-    callAPI('getAssetTypes', AUTH.token)
-  ]).then(function(res){
-    hideLoading();
-    if (!res[0].success || !res[1].success) { showError('โหลดข้อมูลไม่สำเร็จ'); return; }
-    var cats = res[0].data || [];
-    var types = res[1].data || [];
-    var html = '<div class="fade-in space-y-4">';
-    html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-chart-pie-alt text-navy-600"></i> อัตราค่าเสื่อมราคา / อายุการใช้งาน</h3></div>';
-    html += '<div class="card-body"><p class="text-sm text-gray-500 mb-3">จัดการอายุการใช้งานและอัตราค่าเสื่อมราคาตามชนิดครุภัณฑ์</p>';
-    html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-2 text-left w-12">#</th><th class="px-4 py-2 text-left">ประเภท</th><th class="px-4 py-2 text-left">ชนิดครุภัณฑ์</th><th class="px-4 py-2 text-center">อายุการใช้งาน (ปี)</th><th class="px-4 py-2 text-center">อัตราค่าเสื่อม (%/ปี)</th><th class="px-4 py-2 text-center w-24">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-    var rowNum = 0;
-    cats.forEach(function(cat){
-      var catTypes = types.filter(function(t){ return t.category_id === cat.id; });
-      catTypes.forEach(function(t, idx){
-        rowNum++;
-        var life = t.useful_life ? parseInt(t.useful_life) : null;
-        var rate = t.depreciation_rate ? parseFloat(t.depreciation_rate) : null;
-        var rateDisplay = rate !== null ? rate.toFixed(2) + '%' : '<span class="text-gray-300">-</span>';
-        var lifeDisplay = life !== null ? life : '<span class="text-gray-300">-</span>';
-        html += '<tr>';
-        html += '<td class="px-4 py-2 text-gray-500">' + rowNum + '</td>';
-        html += '<td class="px-4 py-2 font-medium text-gray-800">' + (idx===0 ? escHtml(cat.name) : '') + '</td>';
-        html += '<td class="px-4 py-2 text-gray-700">' + escHtml(t.name) + '</td>';
-        html += '<td class="px-4 py-2 text-center font-medium text-blue-600">' + lifeDisplay + '</td>';
-        html += '<td class="px-4 py-2 text-center font-medium text-amber-600">' + rateDisplay + '</td>';
-        html += '<td class="px-4 py-2 text-center"><button onclick="openDepreciationForm(' + JSON.stringify(t).replace(/"/g,'&quot;') + ',' + JSON.stringify(cat).replace(/"/g,'&quot;') + ')" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-edit text-xs"></i></button></td>';
-        html += '</tr>';
-      });
-    });
-    if (!rowNum) html += '<tr><td colspan="6" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
-    html += '</tbody></table></div>';
-    html += '</div></div></div>';
-    document.getElementById('mainContent').innerHTML = html;
-  }).catch(function(){ hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
-}
-
-function openDepreciationForm(type, cat) {
-  type = type || {};
-  cat = cat || {};
-  var body = '<div class="space-y-4">';
-  body += '<input type="hidden" id="depTypeId" value="' + (type.id||'') + '">';
-  body += '<div class="bg-gray-50 rounded-lg p-3">';
-  body += '<p class="text-xs text-gray-500">ชนิดครุภัณฑ์</p>';
-  body += '<p class="font-semibold text-gray-800">' + escHtml(type.name||'') + '</p>';
-  body += '<p class="text-xs text-gray-500 mt-1">' + escHtml(cat.name||'') + '</p>';
-  body += '</div>';
-  body += '<div class="grid grid-cols-2 gap-3">';
-  body += '<div><label class="form-label">อายุการใช้งาน (ปี)</label><input type="number" id="depLife" value="' + (type.useful_life||'') + '" class="form-input" placeholder="เช่น 5"></div>';
-  body += '<div><label class="form-label">อัตราค่าเสื่อม (%/ปี)</label><input type="number" id="depRate" value="' + (type.depreciation_rate||'') + '" class="form-input" placeholder="เช่น 20" step="0.01"></div>';
-  body += '</div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>';
-  footer += '<button onclick="submitDepreciation()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal('แก้ไขค่าเสื่อมราคา', body, footer);
-}
-
-function submitDepreciation() {
-  var typeId = document.getElementById('depTypeId').value;
-  var life = parseInt(document.getElementById('depLife').value||0)||null;
-  var rate = parseFloat(document.getElementById('depRate').value||0)||null;
-  showLoading('กำลังบันทึก...');
-  callAPI('getAssetTypes', AUTH.token).then(function(res){
-    if (!res.success) { hideLoading(); showError(res.message); return; }
-    var type = (res.data||[]).find(function(t){ return t.id === typeId; });
-    if (!type) { hideLoading(); showError('ไม่พบข้อมูล'); return; }
-    type.useful_life = life;
-    type.depreciation_rate = rate;
-    return callAPI('saveAssetType', AUTH.token, type);
-  }).then(function(res){
-    hideLoading(); closeModal();
-    if (res && res.success) { showSuccess(res.message); renderDepreciation(); }
-    else if (res) showError(res.message);
-  }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-}
-
-// ===== ASSET REGISTER (ทะเบียนคุมสินทรัพย์รายตัว) =====
-var _regAssets = [], _regTypes = [], _regCats = [], _regAmphoes = [], _regFiscal = '', _regAmphoe = 'all', _regCat = 'all', _regSearch = '';
-
-function renderAssetRegister() {
-  if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
-  _regFiscal = ''; _regAmphoe = 'all'; _regCat = 'all'; _regSearch = '';
-  showLoading('โหลดข้อมูล...');
-  Promise.all([
-    callAPI('getAssets', AUTH.token),
-    callAPI('getAssetCategories', AUTH.token),
-    callAPI('getAssetTypes', AUTH.token),
-    callAPI('getAmphoes', AUTH.token),
-    callAPI('getFiscalYears', AUTH.token)
-  ]).then(function(res) {
-    hideLoading();
-    _regAssets = (res[0].data || []).slice().sort(function(a,b){ return (a.asset_code||'').localeCompare(b.asset_code||''); });
-    _regCats = res[1].data || [];
-    _regTypes = res[2].data || [];
-    _regAmphoes = res[3].data || [];
-    var fyData = res[4].data || [];
-    _buildRegisterPage(fyData);
-  }).catch(function(){ hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
-}
-
-function _buildRegisterPage(fyData) {
-  var fyList = fyData || [];
-
-  // Compute net value for each asset
-  function _netValue(a) {
-    var type = _regTypes.find(function(t){ return t.id === a.type_id; });
-    var price = parseFloat(a.unit_price || 0);
-    var life = type && type.useful_life ? parseInt(type.useful_life) : 0;
-    var rate = type && type.depreciation_rate ? parseFloat(type.depreciation_rate) : 0;
-    if (!life && !rate) return price;
-    var annualDep = rate > 0 ? price * (rate / 100) : price / life;
-    var receiveDate = a.receive_date ? new Date(a.receive_date) : null;
-    var now = new Date();
-    var yearsUsed = receiveDate ? (now - receiveDate) / (1000 * 60 * 60 * 24 * 365.25) : 0;
-    var accumulated = Math.min(annualDep * yearsUsed, price - 1);
-    return Math.max(price - accumulated, 1);
-  }
-
-  function _depRate(a) {
-    var type = _regTypes.find(function(t){ return t.id === a.type_id; });
-    return type && type.depreciation_rate ? parseFloat(type.depreciation_rate).toFixed(2) + '%' : '-';
-  }
-
-  // Filter
-  var assets = _regAssets.filter(function(a) {
-    if (_regFiscal && String(a.fiscal_year||'') !== String(_regFiscal)) return false;
-    if (_regAmphoe !== 'all' && a.amphoe_id !== _regAmphoe) return false;
-    if (_regCat !== 'all' && a.category_id !== _regCat) return false;
-    if (_regSearch) {
-      var s = _regSearch.toLowerCase();
-      if ((a.asset_code||'').toLowerCase().indexOf(s) < 0 &&
-          (a.description||'').toLowerCase().indexOf(s) < 0 &&
-          (a.serial_number||'').toLowerCase().indexOf(s) < 0 &&
-          (a.gfmis_number||'').toLowerCase().indexOf(s) < 0) return false;
-    }
-    return true;
-  });
-
-  var html = '<div class="fade-in space-y-4">';
-
-  // Filter bar
-  html += '<div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-end">';
-  // ปีงบประมาณ
-  html += '<div class="min-w-[140px]"><label class="text-xs text-gray-500 mb-1 block font-medium">ปีงบประมาณ</label>';
-  html += '<select id="regFiscal" onchange="_regUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="">ทุกปี</option>';
-  fyList.forEach(function(f){ html += '<option value="' + f.year + '"' + (_regFiscal==f.year?' selected':'') + '>' + f.year + (f.is_active!==false?' (ปัจจุบัน)':'') + '</option>'; });
-  html += '</select></div>';
-  // หน่วยงาน
-  html += '<div class="min-w-[160px]"><label class="text-xs text-gray-500 mb-1 block font-medium">หน่วยงาน</label>';
-  html += '<select id="regAmphoe" onchange="_regUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="all">ทุกหน่วยงาน</option>';
-  _regAmphoes.forEach(function(am){ html += '<option value="' + am.id + '"' + (_regAmphoe===am.id?' selected':'') + '>' + escHtml(am.name) + '</option>'; });
-  html += '</select></div>';
-  // ประเภท
-  html += '<div class="min-w-[160px]"><label class="text-xs text-gray-500 mb-1 block font-medium">ประเภท</label>';
-  html += '<select id="regCat" onchange="_regUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="all">ทุกประเภท</option>';
-  _regCats.forEach(function(c){ html += '<option value="' + c.id + '"' + (_regCat===c.id?' selected':'') + '>' + escHtml(c.name) + '</option>'; });
-  html += '</select></div>';
-  // ค้นหา
-  html += '<div class="flex-1 min-w-[200px]"><label class="text-xs text-gray-500 mb-1 block font-medium">ค้นหา</label>';
-  html += '<div class="flex gap-2"><input id="regSearch" type="text" class="form-input text-sm flex-1" placeholder="รหัส / ชื่อ / S/N / GFMIS" value="' + escHtml(_regSearch) + '" onkeydown="if(event.key===\'Enter\') _regUpdateFilter()"><button onclick="_regUpdateFilter()" class="btn-primary btn-sm flex items-center gap-1 px-4"><i class="fi fi-rr-search"></i> ค้นหา</button><button onclick="_regResetFilter()" class="btn-secondary btn-sm px-3" title="รีเซ็ต"><i class="fi fi-rr-refresh"></i></button></div></div>';
-  html += '<div class="self-end text-xs text-gray-500 whitespace-nowrap">พบ ' + assets.length + ' รายการ</div>';
-  html += '</div>';
-
-  // Table
-  html += '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">';
-  html += '<div class="overflow-x-auto">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600 border-b border-gray-200">';
-  html += '<tr>';
-  html += '<th class="px-3 py-3 text-center w-10">ลำดับ</th>';
-  html += '<th class="px-3 py-3 text-left">รหัสครุภัณฑ์</th>';
-  html += '<th class="px-3 py-3 text-left">รายการ</th>';
-  html += '<th class="px-3 py-3 text-left">ประเภท</th>';
-  html += '<th class="px-3 py-3 text-left">หน่วยงาน</th>';
-  html += '<th class="px-3 py-3 text-center">วันที่ได้รับ</th>';
-  html += '<th class="px-3 py-3 text-right">ราคาทุน</th>';
-  html += '<th class="px-3 py-3 text-center">อัตราเสื่อม%</th>';
-  html += '<th class="px-3 py-3 text-right" style="color:#c0392b;">มูลค่าสุทธิ</th>';
-  html += '<th class="px-3 py-3 text-center">จัดการ</th>';
-  html += '</tr></thead><tbody class="divide-y divide-gray-100">';
-
-  if (!assets.length) {
-    html += '<tr><td colspan="10" class="text-center py-10 text-gray-400">ไม่พบข้อมูลครุภัณฑ์</td></tr>';
-  } else {
-    assets.forEach(function(a, idx) {
-      var cat = _regCats.find(function(c){ return c.id === a.category_id; });
-      var amphoe = _regAmphoes.find(function(am){ return am.id === a.amphoe_id; });
-      var net = _netValue(a);
-      var rate = _depRate(a);
-      var price = parseFloat(a.unit_price || 0);
-      html += '<tr class="hover:bg-gray-50">';
-      html += '<td class="px-3 py-2.5 text-center text-gray-500">' + (idx+1) + '</td>';
-      html += '<td class="px-3 py-2.5 text-xs font-medium text-emerald-700">' + escHtml(a.asset_code||'-') + '</td>';
-      html += '<td class="px-3 py-2.5"><p class="font-medium text-gray-800 text-sm leading-snug">' + escHtml(a.description||'-') + '</p><p class="text-xs text-gray-400">' + escHtml(a.brand_model||'') + '</p></td>';
-      html += '<td class="px-3 py-2.5 text-xs text-gray-600">' + escHtml(cat ? cat.name : '-') + '</td>';
-      html += '<td class="px-3 py-2.5 text-xs text-emerald-700 font-medium">' + escHtml(amphoe ? amphoe.name : '-') + '</td>';
-      html += '<td class="px-3 py-2.5 text-center text-xs text-gray-600">' + escHtml(formatDate(a.receive_date)||'-') + '</td>';
-      html += '<td class="px-3 py-2.5 text-right text-sm text-gray-800">' + _fmtMoney(price) + '</td>';
-      html += '<td class="px-3 py-2.5 text-center text-xs text-gray-600">' + rate + '</td>';
-      html += '<td class="px-3 py-2.5 text-right text-sm font-semibold" style="color:#c0392b;">' + _fmtMoney(net) + '</td>';
-      html += '<td class="px-3 py-2.5"><div class="flex gap-1.5 justify-center">';
-      html += '<button onclick="printAssetRegister(\'' + a.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700"><i class="fi fi-rr-book-open-cover"></i> ทะเบียน</button>';
-      html += '<button onclick="window.open(\'?public_asset_id=' + a.id + '\', \'_blank\')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700"><i class="fi fi-rr-eye"></i> ดูรายละเอียด</button>';
-      html += '</div></td>';
-      html += '</tr>';
-    });
-  }
-  html += '</tbody></table></div></div></div>';
-  document.getElementById('mainContent').innerHTML = html;
-}
-
-function _regUpdateFilter() {
-  _regFiscal = (document.getElementById('regFiscal')||{}).value || '';
-  _regAmphoe = (document.getElementById('regAmphoe')||{}).value || 'all';
-  _regCat = (document.getElementById('regCat')||{}).value || 'all';
-  _regSearch = (document.getElementById('regSearch')||{}).value || '';
-  _buildRegisterPage(_settingsFiscalYears.length ? _settingsFiscalYears : []);
-}
-
-function _regResetFilter() {
-  _regFiscal = ''; _regAmphoe = 'all'; _regCat = 'all'; _regSearch = '';
-  _buildRegisterPage(_settingsFiscalYears.length ? _settingsFiscalYears : []);
-}
-
-var _arTab = 'list', _arFiscal = '', _arAmphoe = 'all', _arCat = 'all', _arStatus = 'all';
-var _arAssets = [], _arCats = [], _arAmphoes = [], _arCommittee = null;
-
 function renderAssetReports() {
   if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
   showLoading('โหลดข้อมูล...');
   Promise.all([
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetCategories', AUTH.token),
-    callAPI('getAmphoes', AUTH.token),
-    callAPI('getAssetCommittees', AUTH.token)
+    callAPI('getAmphoes', AUTH.token)
   ]).then(function(res) {
     hideLoading();
-    _arAssets = res[0].data || [];
-    _arCats = res[1].data || [];
-    _arAmphoes = res[2].data || [];
-    var comm = res[3].data || [];
-    _arCommittee = comm.length ? comm[0] : null;
-    buildAssetReportsPage();
+    var assets = res[0].data || [];
+    var cats = res[1].data || [];
+    var amphoes = res[2].data || [];
+    buildAssetReportsPage(assets, cats, amphoes);
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
-function _arFiltered() {
-  return _arAssets.filter(function(a) {
-    if (_arFiscal && String(a.fiscal_year||'') !== String(_arFiscal)) return false;
-    if (_arAmphoe !== 'all' && a.amphoe_id !== _arAmphoe) return false;
-    if (_arCat !== 'all' && a.category_id !== _arCat) return false;
-    if (_arStatus !== 'all' && a.status !== _arStatus) return false;
-    return true;
-  });
-}
+function buildAssetReportsPage(assets, cats, amphoes) {
+  var total = assets.length;
+  var active = assets.filter(function(a){ return a.status === 'active'; }).length;
+  var damaged = assets.filter(function(a){ return a.status === 'damaged'; }).length;
+  var disposed = assets.filter(function(a){ return a.status === 'disposed'; }).length;
+  var totalValue = assets.reduce(function(s,a){ return s + (a.unit_price||0); }, 0);
 
-function buildAssetReportsPage() {
-  var assets = _arFiltered();
   var html = '<div class="fade-in space-y-4">';
+  html += '<h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-file-invoice text-navy-600"></i> รายงานครุภัณฑ์</h3>';
 
-  // Tabs
-  html += '<div class="flex gap-2 border-b border-gray-200 mb-2">';
-  html += '<button onclick="_arSetTab(\'list\')" class="px-4 py-2 text-sm font-medium ' + (_arTab==='list'?'text-navy-700 border-b-2 border-navy-700':'text-gray-500 hover:text-gray-700') + '">รายการครุภัณฑ์</button>';
-  html += '<button onclick="_arSetTab(\'summary\')" class="px-4 py-2 text-sm font-medium ' + (_arTab==='summary'?'text-navy-700 border-b-2 border-navy-700':'text-gray-500 hover:text-gray-700') + '">สรุปรายงานครุภัณฑ์</button>';
-  html += '<button onclick="_arSetTab(\'disposed\')" class="px-4 py-2 text-sm font-medium ' + (_arTab==='disposed'?'text-navy-700 border-b-2 border-navy-700':'text-gray-500 hover:text-gray-700') + '">สรุปครุภัณฑ์ที่จำหน่ายแล้ว</button>';
-  html += '</div>';
-
-  // Filters
-  html += '<div id="arFilters" class="flex flex-wrap gap-2 items-end bg-white rounded-xl border border-gray-200 p-3">';
-  html += '<div class="flex-1 min-w-[140px]"><label class="text-xs text-gray-500 mb-1 block">ปีงบประมาณ</label><select id="arFiscal" onchange="_arUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="">ทั้งหมด</option>';
-  var fyList = _settingsFiscalYears.length ? _settingsFiscalYears.map(function(f){ return f.year; }) : [];
-  if (!fyList.length) {
-    var assetYears = {};
-    _arAssets.forEach(function(a){ if(a.fiscal_year) assetYears[a.fiscal_year]=1; });
-    fyList = Object.keys(assetYears).sort().reverse();
-  }
-  fyList.forEach(function(y){ html += '<option value="' + y + '"' + (_arFiscal==y?' selected':'') + '>' + y + '</option>'; });
-  html += '</select></div>';
-  html += '<div class="flex-1 min-w-[140px]"><label class="text-xs text-gray-500 mb-1 block">หน่วยงาน</label><select id="arAmphoe" onchange="_arUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="all">ทุกหน่วยงาน</option>';
-  _arAmphoes.forEach(function(am){ html += '<option value="' + am.id + '"' + (_arAmphoe===am.id?' selected':'') + '>' + escHtml(am.name) + '</option>'; });
-  html += '</select></div>';
-  html += '<div class="flex-1 min-w-[140px]"><label class="text-xs text-gray-500 mb-1 block">ประเภทครุภัณฑ์</label><select id="arCat" onchange="_arUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="all">ทุกประเภท</option>';
-  _arCats.forEach(function(c){ html += '<option value="' + c.id + '"' + (_arCat===c.id?' selected':'') + '>' + escHtml(c.name) + '</option>'; });
-  html += '</select></div>';
-  html += '<div class="flex-1 min-w-[120px]"><label class="text-xs text-gray-500 mb-1 block">สถานะ</label><select id="arStatus" onchange="_arUpdateFilter()" class="form-input text-sm">';
-  html += '<option value="all">ทุกสถานะ</option>';
-  html += '<option value="active"' + (_arStatus==='active'?' selected':'') + '>ใช้งานได้</option>';
-  html += '<option value="damaged"' + (_arStatus==='damaged'?' selected':'') + '>ชำรุด/รอจำหน่าย</option>';
-  html += '<option value="disposed"' + (_arStatus==='disposed'?' selected':'') + '>จำหน่ายแล้ว</option>';
-  html += '</select></div>';
-  html += '<div class="flex gap-2"><button onclick="_arUpdateFilter()" class="btn-primary btn-sm"><i class="fi fi-rr-search mr-1"></i>ค้นหา</button>';
-  html += '<button onclick="_arDoPrint()" class="btn-secondary btn-sm"><i class="fi fi-rr-print mr-1"></i>พิมพ์</button></div>';
-  html += '</div>';
-
-  if (_arTab === 'list') html += _arBuildList(assets);
-  else if (_arTab === 'summary') html += _arBuildSummary(assets);
-  else if (_arTab === 'disposed') html += _arBuildDisposed(assets);
-
-  html += '</div>';
-  document.getElementById('mainContent').innerHTML = html;
-  if (_arTab === 'list') setTimeout(_arRenderQRs, 50);
-}
-
-function _arSetTab(tab) { _arTab = tab; buildAssetReportsPage(); }
-function _arUpdateFilter() {
-  _arFiscal = (document.getElementById('arFiscal')||{}).value||'';
-  _arAmphoe = (document.getElementById('arAmphoe')||{}).value||'all';
-  _arCat = (document.getElementById('arCat')||{}).value||'all';
-  _arStatus = (document.getElementById('arStatus')||{}).value||'all';
-  buildAssetReportsPage();
-}
-
-function _arBuildList(assets) {
-  var html = '<div class="card overflow-hidden" id="arPrintArea">';
-  html += _arPrintHeader('รายงานการตรวจสอบพัสดุประจำปีงบประมาณ พ.ศ. ' + (_arFiscal || '...'));
-  html += '<div class="overflow-x-auto">';
-  html += '<table class="w-full text-xs ar-table"><thead><tr>';
-  html += '<th>ลำดับ</th><th>วันที่ได้รับ/<br>จัดซื้อ</th><th>เลขที่สินทรัพย์/<br>เลขที่ใบ GFMIS</th>';
-  html += '<th>รหัสครุภัณฑ์</th><th>ประเภท</th><th>ชนิด</th><th>รายการ</th><th>ราคา/<br>หน่วย</th>';
-  html += '<th>วิธีการ<br>ได้มา</th><th>สถานที่<br>ใช้งาน</th><th>ผู้ใช้</th><th>สถานะ</th><th>QR Code</th>';
-  html += '</tr></thead><tbody>';
-  if (!assets.length) html += '<tr><td colspan="13" class="text-center py-8 text-gray-400">ไม่พบข้อมูล</td></tr>';
-  assets.forEach(function(a, i) {
-    html += '<tr>';
-    html += '<td class="text-center">' + (i+1) + '</td>';
-    html += '<td>' + escHtml(a.receive_date||'-') + '</td>';
-    html += '<td>' + escHtml(a.asset_number||'') + '<br><span class="text-gray-500">' + escHtml(a.gfmis_number||'') + '</span></td>';
-    html += '<td>' + escHtml(a.asset_code||'') + '</td>';
-    html += '<td>' + escHtml(_getAssetCatName(a.category_id)) + '</td>';
-    html += '<td>' + escHtml(_getAssetTypeName(a.type_id)) + '</td>';
-    html += '<td>' + escHtml(a.description||'') + '</td>';
-    html += '<td class="text-right">' + _fmtMoney(a.unit_price) + '</td>';
-    html += '<td>' + escHtml(a.acquisition_method||'') + '</td>';
-    html += '<td>' + escHtml(a.location||'') + '</td>';
-    html += '<td>' + escHtml(a.created_by||'') + '</td>';
-    html += '<td>' + _assetStatusLabel(a.status) + '</td>';
-    html += '<td class="text-center"><div id="ar-qr-' + a.id + '" class="ar-qr inline-block"></div></td>';
-    html += '</tr>';
+  // KPI cards
+  html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
+  var kpis = [
+    { label:'ทั้งหมด', value:total, icon:'fi-rr-box', color:'bg-blue-100', iconColor:'text-blue-600' },
+    { label:'ใช้งานได้', value:active, icon:'fi-rr-check-circle', color:'bg-green-100', iconColor:'text-green-600' },
+    { label:'ชำรุด/รอจำหน่าย', value:damaged, icon:'fi-rr-triangle-warning', color:'bg-amber-100', iconColor:'text-amber-600' },
+    { label:'มูลค่ารวม', value:_fmtMoney(totalValue), icon:'fi-rr-coins', color:'bg-purple-100', iconColor:'text-purple-600' }
+  ];
+  kpis.forEach(function(k) {
+    html += '<div class="card kpi-card p-4">';
+    html += '<div class="w-10 h-10 ' + k.color + ' rounded-xl flex items-center justify-center mb-2"><i class="fi ' + k.icon + ' ' + k.iconColor + ' text-lg"></i></div>';
+    html += '<p class="text-xl font-bold text-gray-800">' + k.value + '</p>';
+    html += '<p class="text-xs text-gray-500">' + k.label + '</p></div>';
   });
-  html += '</tbody></table></div>';
-  html += _arPrintFooter();
   html += '</div>';
-  return html;
-}
 
-function _arBuildSummary(assets) {
-  var html = '<div class="card overflow-hidden" id="arPrintArea">';
-  html += _arPrintHeader('สรุปรายงานการตรวจสอบพัสดุประจำปีงบประมาณ พ.ศ. ' + (_arFiscal || '...'));
-  html += '<div class="overflow-x-auto">';
-  html += '<table class="w-full text-xs ar-table"><thead><tr>';
-  html += '<th>ลำดับ</th><th>หน่วยนับ</th><th>จำนวนรายการ/<br>ชิ้น</th><th>ราคา</th><th>อัตราครุภัณฑ์</th><th>ส่งคืน/<br>จำหน่ายไปแล้ว</th><th>รวม</th>';
-  html += '</tr></thead><tbody>';
+  // Charts
+  html += '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">';
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-pie text-navy-600"></i> สัดส่วนตามประเภท</h3></div>';
+  html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartAssetCat"></canvas></div></div></div>';
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-bar text-navy-600"></i> สถานะครุภัณฑ์</h3></div>';
+  html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartAssetStatus"></canvas></div></div></div>';
+  html += '</div>';
 
-  var grandTotal = 0, grandActive = 0, grandDisposed = 0;
-  var rows = [];
-  _arCats.forEach(function(c) {
+  // Summary table
+  html += '<div class="card overflow-hidden"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-list text-navy-600"></i> สรุปตามประเภท</h3></div>';
+  html += '<div class="card-body overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-2 text-left">ประเภท</th><th class="px-4 py-2 text-right">จำนวน</th><th class="px-4 py-2 text-right">มูลค่า</th><th class="px-4 py-2 text-right">ใช้งานได้</th><th class="px-4 py-2 text-right">ชำรุด</th><th class="px-4 py-2 text-right">จำหน่ายแล้ว</th></tr></thead><tbody class="divide-y divide-gray-100">';
+  cats.forEach(function(c) {
     var catAssets = assets.filter(function(a){ return a.category_id === c.id; });
     if (!catAssets.length) return;
-    var count = catAssets.length;
-    var value = catAssets.reduce(function(s,a){ return s + (a.unit_price||0); }, 0);
-    var disposedCount = catAssets.filter(function(a){ return a.status === 'disposed'; }).length;
-    rows.push({ name: c.name, count: count, value: value, disposed: disposedCount });
-    grandTotal += count; grandActive += (count - disposedCount); grandDisposed += disposedCount;
+    var catValue = catAssets.reduce(function(s,a){ return s+(a.unit_price||0); },0);
+    var catActive = catAssets.filter(function(a){ return a.status==='active'; }).length;
+    var catDamaged = catAssets.filter(function(a){ return a.status==='damaged'; }).length;
+    var catDisposed = catAssets.filter(function(a){ return a.status==='disposed'; }).length;
+    html += '<tr><td class="px-4 py-2 font-medium text-gray-800">' + escHtml(c.name) + '</td>';
+    html += '<td class="px-4 py-2 text-right">' + catAssets.length + '</td>';
+    html += '<td class="px-4 py-2 text-right font-medium">' + _fmtMoney(catValue) + '</td>';
+    html += '<td class="px-4 py-2 text-right text-green-600">' + catActive + '</td>';
+    html += '<td class="px-4 py-2 text-right text-amber-600">' + catDamaged + '</td>';
+    html += '<td class="px-4 py-2 text-right text-red-600">' + catDisposed + '</td></tr>';
   });
-
-  if (!rows.length) html += '<tr><td colspan="7" class="text-center py-8 text-gray-400">ไม่พบข้อมูล</td></tr>';
-  rows.forEach(function(r, i) {
-    html += '<tr>';
-    html += '<td class="text-center">' + (i+1) + '</td>';
-    html += '<td>' + escHtml(r.name) + '</td>';
-    html += '<td class="text-right">' + r.count + '</td>';
-    html += '<td class="text-right">' + _fmtMoney(r.value) + '</td>';
-    html += '<td class="text-right">' + (r.count - r.disposed) + '</td>';
-    html += '<td class="text-right">' + r.disposed + '</td>';
-    html += '<td class="text-right font-semibold">' + r.count + '</td>';
-    html += '</tr>';
-  });
-  html += '<tr class="ar-total"><td colspan="2" class="text-center">รวมทั้งสิ้น</td>';
-  html += '<td class="text-right">' + grandTotal + '</td>';
-  html += '<td class="text-right">' + _fmtMoney(assets.reduce(function(s,a){ return s + (a.unit_price||0); }, 0)) + '</td>';
-  html += '<td class="text-right">' + grandActive + '</td>';
-  html += '<td class="text-right">' + grandDisposed + '</td>';
-  html += '<td class="text-right">' + grandTotal + '</td></tr>';
-  html += '</tbody></table></div>';
-  html += _arPrintFooter();
+  html += '<tr class="bg-gray-50 font-semibold"><td class="px-4 py-2">รวมทั้งหมด</td><td class="px-4 py-2 text-right">' + total + '</td><td class="px-4 py-2 text-right">' + _fmtMoney(totalValue) + '</td><td class="px-4 py-2 text-right">' + active + '</td><td class="px-4 py-2 text-right">' + damaged + '</td><td class="px-4 py-2 text-right">' + disposed + '</td></tr>';
+  html += '</tbody></table></div></div>';
   html += '</div>';
-  return html;
-}
+  document.getElementById('mainContent').innerHTML = html;
 
-function _arRenderQRs() {
-  if (typeof QRCode === 'undefined') return;
-  var assets = _arFiltered();
-  assets.forEach(function(a) {
-    var el = document.getElementById('ar-qr-' + a.id);
-    if (!el) return;
-    el.innerHTML = '';
-    try {
-      new QRCode(el, {
-        text: a.asset_code || a.id,
-        width: 48,
-        height: 48,
-        colorDark: '#000000',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.M
+  // Render charts
+  setTimeout(function() {
+    var catLabels = [], catData = [];
+    cats.forEach(function(c) {
+      var count = assets.filter(function(a){ return a.category_id === c.id; }).length;
+      if (count > 0) { catLabels.push(c.name); catData.push(count); }
+    });
+    var ctx1 = document.getElementById('chartAssetCat');
+    if (ctx1 && catLabels.length) {
+      new Chart(ctx1, {
+        type: 'doughnut',
+        data: { labels: catLabels, datasets: [{ data: catData, backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4'] }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 10, padding: 8 } } } }
       });
-    } catch(e) {}
-  });
-}
-
-function _arBuildDisposed(assets) {
-  var disposed = assets.filter(function(a){ return a.status === 'disposed'; });
-  var html = '<div class="card overflow-hidden" id="arPrintArea">';
-  html += _arPrintHeader('สรุปครุภัณฑ์ที่จำหน่ายแล้ว ประจำปีงบประมาณ พ.ศ. ' + (_arFiscal || '...'));
-  html += '<div class="overflow-x-auto">';
-  html += '<table class="w-full text-xs ar-table"><thead><tr>';
-  html += '<th>ลำดับ</th><th>วันที่ได้รับ/<br>จัดซื้อ</th><th>รหัสครุภัณฑ์</th>';
-  html += '<th>รายการ</th><th>ราคา</th><th>หน่วยงาน</th><th>หมายเหตุ</th>';
-  html += '</tr></thead><tbody>';
-  if (!disposed.length) html += '<tr><td colspan="7" class="text-center py-8 text-gray-400">ไม่พบข้อมูล</td></tr>';
-  disposed.forEach(function(a, i) {
-    html += '<tr>';
-    html += '<td class="text-center">' + (i+1) + '</td>';
-    html += '<td>' + escHtml(a.receive_date||'-') + '</td>';
-    html += '<td>' + escHtml(a.asset_code||'') + '</td>';
-    html += '<td>' + escHtml(a.description||'') + '</td>';
-    html += '<td class="text-right">' + _fmtMoney(a.unit_price) + '</td>';
-    html += '<td>' + escHtml(_getAmphoeName(a.amphoe_id)) + '</td>';
-    html += '<td>' + escHtml(a.notes||'') + '</td>';
-    html += '</tr>';
-  });
-  html += '<tr class="ar-total"><td colspan="4" class="text-center">รวม</td>';
-  html += '<td class="text-right">' + _fmtMoney(disposed.reduce(function(s,a){ return s + (a.unit_price||0); }, 0)) + '</td>';
-  html += '<td colspan="2"></td></tr>';
-  html += '</tbody></table></div>';
-  html += _arPrintFooter();
-  html += '</div>';
-  return html;
-}
-
-function _arDoPrint() {
-  var el = document.getElementById('arPrintArea');
-  if (!el) { showError('ไม่พบข้อมูลสำหรับพิมพ์'); return; }
-  var content = el.innerHTML;
-  var win = window.open('', '_blank');
-  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>รายงานการตรวจสอบพัสดุ</title>' +
-    '<style>' +
-    '@page{size:A4 landscape;margin:0}' +
-    'html,body{margin:0;padding:0}' +
-    'body{font-family:sarabun,sans-serif;font-size:10px;color:#000;background:#fff}' +
-    '.ar-wrap{padding:12mm 14mm}' +
-    '*{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}' +
-    'table{border-collapse:collapse;width:100%;table-layout:fixed}' +
-    'th,td{border:1px solid #999;padding:3px 4px;font-size:9px;vertical-align:top;word-break:break-word}' +
-    'th{background:#f3f4f6 !important;text-align:center;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
-    '.ar-print-header{text-align:center;padding-bottom:8px;border-bottom:2px solid #333;margin-bottom:10px}' +
-    '.ar-print-header h2{font-size:13px;font-weight:700;margin:4px 0}' +
-    '.ar-print-header p{font-size:10px;margin:2px 0}' +
-    '.ar-header-logo{width:40px;height:40px;object-fit:contain}' +
-    '.ar-print-footer{margin-top:20px}' +
-    '.ar-print-footer .grid{display:flex;justify-content:space-around}' +
-    '.ar-print-footer .grid>div{text-align:center;font-size:10px}' +
-    'canvas,img.ar-qr{width:60px !important;height:60px !important}' +
-    '@media print{.no-print{display:none}body{font-size:9px}}' +
-    '</style>' +
-    '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>' +
-    '</head><body><div class="ar-wrap">' + content + '</div>' +
-    '<script>' +
-    'document.querySelectorAll("[data-qr-url]").forEach(function(el){' +
-    '  new QRCode(el,{text:el.getAttribute("data-qr-url"),width:60,height:60,correctLevel:1});' +
-    '});' +
-    'setTimeout(function(){window.print();},800);' +
-    '<\/script>' +
-    '</body></html>');
-  win.document.close();
-}
-
-function _arPrintHeader(title) {
-  var cfg = {};
-  try { cfg = JSON.parse(localStorage.getItem('sup_config') || '{}'); } catch(e) {}
-  var org = cfg.organization_name || '';
-  var appName = cfg.app_name || 'ระบบวัสดุสิ้นเปลือง';
-  var logoUrl = cfg.app_logo ? imgUrl(cfg.app_logo) : '';
-  var html = '<div class="ar-print-header text-center py-3 border-b-2 border-gray-800 mb-3">';
-  if (logoUrl) html += '<img src="' + logoUrl + '" class="ar-header-logo mx-auto mb-1" alt="logo">';
-  html += '<p class="text-xs text-gray-600 font-semibold">' + escHtml(appName) + '</p>';
-  html += '<h2 class="text-base font-bold mt-1">' + escHtml(title) + '</h2>';
-  if (org) html += '<p class="text-sm">' + escHtml(org) + '</p>';
-  if (_arFiscal) html += '<p class="text-xs text-gray-600">ประจำปีงบประมาณ พ.ศ. ' + _arFiscal + '</p>';
-  html += '</div>';
-  return html;
-}
-
-function _arPrintFooter() {
-  if (!_arCommittee) return '';
-  var c = _arCommittee;
-  var html = '<div class="ar-print-footer mt-8 pt-4">';
-  html += '<div class="grid grid-cols-3 gap-4 text-center text-xs mt-8">';
-  html += '<div><p>(ลงชื่อ)................................................</p><p>ประธานกรรมการ</p><p>(' + escHtml(c.chairman_name||'') + ')</p><p>' + escHtml(c.chairman_position||'') + '</p></div>';
-  html += '<div><p>(ลงชื่อ)................................................</p><p>กรรมการ</p><p>(' + escHtml(c.member1_name||'') + ')</p><p>' + escHtml(c.member1_position||'') + '</p></div>';
-  html += '<div><p>(ลงชื่อ)................................................</p><p>กรรมการ</p><p>(' + escHtml(c.member2_name||'') + ')</p><p>' + escHtml(c.member2_position||'') + '</p></div>';
-  html += '</div></div>';
-  return html;
+    }
+    var ctx2 = document.getElementById('chartAssetStatus');
+    if (ctx2) {
+      new Chart(ctx2, {
+        type: 'bar',
+        data: { labels: ['ใช้งานได้','ชำรุด/รอจำหน่าย','จำหน่ายแล้ว','รออนุมัติจำหน่าย'], datasets: [{ label: 'จำนวน', data: [active, damaged, disposed, assets.filter(function(a){return a.status==='pending_dispose';}).length], backgroundColor: ['#10b981','#f59e0b','#ef4444','#f97316'], borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 10 } }, grid: { display: false } } } }
+      });
+    }
+  }, 100);
 }
 
 // ===== ON LOAD =====
 window.onload = function() {
-  // Parse URL params immediately — before any async call
-  var urlParams = new URLSearchParams(window.location.search);
-  _QR_ACTION = urlParams.get('action') || '';
-  _QR_ITEM_ID = urlParams.get('item_id') || '';
-  _QR_ASSET_ID = urlParams.get('id') || '';
-  _PUBLIC_ASSET_ID = urlParams.get('public_asset_id') || '';
-
-  // If public asset page: render immediately without login
-  if (_PUBLIC_ASSET_ID) {
-    renderPublicAssetPage();
-    return;
-  }
-
-  // Initialize login particles
-  initLoginParticles();
-
-  // Otherwise: fetch config then decide login or app
+  // ดึง config ก่อนเพื่ออัปเดต logo และชื่อระบบ
   callAPI('getConfig').then(function(res) {
     if (res.success && res.data) {
       var cfg = res.data;
       if (cfg.app_name) {
         document.getElementById('loginAppName').textContent = cfg.app_name;
-        document.getElementById('loginAppNameMobile').textContent = cfg.app_name;
         document.getElementById('sidebarAppName').textContent = cfg.app_name;
       }
       updateLogoDisplay(cfg.app_logo);
     }
   }).catch(function() {}).finally(function() {
+    // Parse URL params for QR
+    var urlParams = new URLSearchParams(window.location.search);
+    _QR_ACTION = urlParams.get('action') || '';
+    _QR_ITEM_ID = urlParams.get('item_id') || '';
+    _QR_ASSET_ID = urlParams.get('id') || '';
+
     if (AUTH.token) { initApp(); }
     else { showLoginPage(); }
   });
 };
-
-// ===== MASTER DATA CRUD (Settings) =====
-function openCatForm(cat) {
-  cat = cat || {};
-  var body = '<div class="space-y-3">';
-  body += '<input type="hidden" id="catId" value="' + (cat.id||'') + '">';
-  body += '<div><label class="form-label">ชื่อประเภทครุภัณฑ์ *</label><input type="text" id="catName" value="' + escHtml(cat.name||'') + '" class="form-input"></div>';
-  body += '<div><label class="form-label">คำอธิบาย</label><input type="text" id="catDesc" value="' + escHtml(cat.description||'') + '" class="form-input"></div>';
-  body += '<div class="flex items-center gap-4">';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="catRequiresSerial" ' + (cat.requires_serial===true?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="catRequiresSerial" class="text-sm text-gray-700">บังคับกรอก Serial/License</label></div>';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="catIsSoftware" ' + (cat.is_software===true?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="catIsSoftware" class="text-sm text-gray-700">เป็นซอฟต์แวร์</label></div>';
-  body += '</div>';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="catActive" ' + (cat.is_active!==false?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="catActive" class="text-sm text-gray-700">ใช้งาน</label></div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>';
-  footer += '<button onclick="submitCat()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal(cat.id ? 'แก้ไขประเภทครุภัณฑ์' : 'เพิ่มประเภทครุภัณฑ์', body, footer);
-}
-function submitCat() {
-  var data = { id: document.getElementById('catId').value, name: document.getElementById('catName').value.trim(), description: document.getElementById('catDesc').value.trim(), is_active: document.getElementById('catActive').checked, requires_serial: document.getElementById('catRequiresSerial').checked, is_software: document.getElementById('catIsSoftware').checked };
-  if (!data.name) { showError('กรุณากรอกชื่อประเภท'); return; }
-  showLoading('กำลังบันทึก...');
-  callAPI('saveAssetCategory', AUTH.token, data).then(function(res) {
-    hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderSettings(); }
-    else showError(res.message);
-  }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-}
-function deleteCatConfirm(id, name) {
-  showConfirm('ลบประเภทครุภัณฑ์', 'ยืนยันลบ "' + name + '" ?', function(){
-    showLoading('กำลังลบ...');
-    callAPI('deleteAssetCategory', AUTH.token, id).then(function(res) {
-      hideLoading();
-      if (res.success) { showSuccess(res.message); renderSettings(); }
-      else showError(res.message);
-    }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  }, 'ลบ');
-}
-
-function openTypeForm(type) {
-  type = type || {};
-  var body = '<div class="space-y-3">';
-  body += '<input type="hidden" id="typeId" value="' + (type.id||'') + '">';
-  body += '<div><label class="form-label">ชื่อชนิดครุภัณฑ์ *</label><input type="text" id="typeName" value="' + escHtml(type.name||'') + '" class="form-input"></div>';
-  body += '<div><label class="form-label">ประเภทครุภัณฑ์ *</label><select id="typeCatId" class="form-input">';
-  body += '<option value="">เลือกประเภท</option>';
-  _settingsCats.forEach(function(c){ body += '<option value="' + c.id + '"' + ((type.category_id===c.id)?' selected':'') + '>' + escHtml(c.name) + '</option>'; });
-  body += '</select></div>';
-  body += '<div class="grid grid-cols-2 gap-3">';
-  body += '<div><label class="form-label">อายุการใช้งาน (ปี)</label><input type="number" id="typeLife" value="' + (type.useful_life||'') + '" class="form-input" placeholder="เช่น 5"></div>';
-  body += '<div><label class="form-label">อัตราค่าเสื่อม (%/ปี)</label><input type="number" id="typeRate" value="' + (type.depreciation_rate||'') + '" class="form-input" placeholder="เช่น 20" step="0.01"></div>';
-  body += '</div>';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="typeActive" ' + (type.is_active!==false?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="typeActive" class="text-sm text-gray-700">ใช้งาน</label></div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>';
-  footer += '<button onclick="submitType()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal(type.id ? 'แก้ไขชนิดครุภัณฑ์' : 'เพิ่มชนิดครุภัณฑ์', body, footer);
-}
-function submitType() {
-  var data = { id: document.getElementById('typeId').value, name: document.getElementById('typeName').value.trim(), category_id: document.getElementById('typeCatId').value, is_active: document.getElementById('typeActive').checked, useful_life: parseInt(document.getElementById('typeLife').value||0)||null, depreciation_rate: parseFloat(document.getElementById('typeRate').value||0)||null };
-  if (!data.name || !data.category_id) { showError('กรุณากรอกชื่อและเลือกประเภท'); return; }
-  showLoading('กำลังบันทึก...');
-  callAPI('saveAssetType', AUTH.token, data).then(function(res) {
-    hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderSettings(); }
-    else showError(res.message);
-  }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-}
-function deleteTypeConfirm(id, name) {
-  showConfirm('ลบชนิดครุภัณฑ์', 'ยืนยันลบ "' + name + '" ?', function(){
-    showLoading('กำลังลบ...');
-    callAPI('deleteAssetType', AUTH.token, id).then(function(res) {
-      hideLoading();
-      if (res.success) { showSuccess(res.message); renderSettings(); }
-      else showError(res.message);
-    }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  }, 'ลบ');
-}
-
-function openAmphoeForm(am) {
-  am = am || {};
-  var body = '<div class="space-y-3">';
-  body += '<input type="hidden" id="amphoeId" value="' + (am.id||'') + '">';
-  body += '<div><label class="form-label">ชื่อหน่วยงาน *</label><input type="text" id="amphoeName" value="' + escHtml(am.name||'') + '" class="form-input"></div>';
-  body += '<div><label class="form-label">รหัสหน่วยงาน</label><input type="text" id="amphoeCode" value="' + escHtml(am.code||'') + '" class="form-input"></div>';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="amphoeActive" ' + (am.is_active!==false?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="amphoeActive" class="text-sm text-gray-700">ใช้งาน</label></div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>';
-  footer += '<button onclick="submitAmphoe()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal(am.id ? 'แก้ไขหน่วยงาน' : 'เพิ่มหน่วยงาน', body, footer);
-}
-function submitAmphoe() {
-  var data = { id: document.getElementById('amphoeId').value, name: document.getElementById('amphoeName').value.trim(), code: document.getElementById('amphoeCode').value.trim(), is_active: document.getElementById('amphoeActive').checked };
-  if (!data.name) { showError('กรุณากรอกชื่อหน่วยงาน'); return; }
-  showLoading('กำลังบันทึก...');
-  callAPI('saveAmphoe', AUTH.token, data).then(function(res) {
-    hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderSettings(); }
-    else showError(res.message);
-  }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-}
-function deleteAmphoeConfirm(id, name) {
-  showConfirm('ลบหน่วยงาน', 'ยืนยันลบ "' + name + '" ?', function(){
-    showLoading('กำลังลบ...');
-    callAPI('deleteAmphoe', AUTH.token, id).then(function(res) {
-      hideLoading();
-      if (res.success) { showSuccess(res.message); renderSettings(); }
-      else showError(res.message);
-    }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  }, 'ลบ');
-}
-
-function openFiscalYearForm(fy) {
-  fy = fy || {};
-  var body = '<div class="space-y-3">';
-  body += '<input type="hidden" id="fyId" value="' + (fy.id||'') + '">';
-  body += '<div><label class="form-label">ปีงบประมาณ (พ.ศ.) *</label><input type="number" id="fyYear" value="' + escHtml(fy.year||'') + '" class="form-input" placeholder="เช่น 2569"></div>';
-  body += '<div class="flex items-center gap-2"><input type="checkbox" id="fyActive" ' + (fy.is_active!==false?'checked':'') + ' class="w-4 h-4 rounded accent-navy-700"><label for="fyActive" class="text-sm text-gray-700">ใช้งาน</label></div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>';
-  footer += '<button onclick="submitFiscalYear()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal(fy.id ? 'แก้ไขปีงบประมาณ' : 'เพิ่มปีงบประมาณ', body, footer);
-}
-function submitFiscalYear() {
-  var data = { id: document.getElementById('fyId').value, year: String(document.getElementById('fyYear').value).trim(), is_active: document.getElementById('fyActive').checked };
-  if (!data.year) { showError('กรุณากรอกปีงบประมาณ'); return; }
-  showLoading('กำลังบันทึก...');
-  callAPI('saveFiscalYear', AUTH.token, data).then(function(res) {
-    hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderSettings(); }
-    else showError(res.message);
-  }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-}
-function deleteFiscalYearConfirm(id, name) {
-  showConfirm('ลบปีงบประมาณ', 'ยืนยันลบ ปี พ.ศ. ' + name + ' ?', function(){
-    showLoading('กำลังลบ...');
-    callAPI('deleteFiscalYear', AUTH.token, id).then(function(res) {
-      hideLoading();
-      if (res.success) { showSuccess(res.message); renderSettings(); }
-      else showError(res.message);
-    }).catch(function(){ hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  }, 'ลบ');
-}
 

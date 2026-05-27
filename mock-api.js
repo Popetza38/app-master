@@ -163,11 +163,11 @@
   window._mockAPI = {
 
     // --- Auth ---
-    login: function(username, password) {
+    login: function(username, password, role) {
       var users = _get('users') || [];
       var u = users.find(function(x){ return x.username === username && x.password === password; });
       if (!u) return { success:false, message:'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
-      if (!u.active) return { success:false, message:'บัญชีผู้ใช้ถูกระงับการใช้งาน' };
+      if (u.role !== role) return { success:false, message:'บทบาทไม่ตรงกับบัญชีผู้ใช้' };
       u.token = 'tok_' + u.id + '_' + Date.now();
       u.last_login = _now();
       _set('users', users);
