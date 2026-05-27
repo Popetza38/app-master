@@ -490,11 +490,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <script src="api.js?v=3"></script>
 <script src="mock-api.js"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=35"></script>
 <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function(){});
-}
+// Disable service worker for development to prevent caching issues
+// if ('serviceWorker' in navigator) {
+//   navigator.serviceWorker.register('sw.js').catch(function(){});
+// }
 </script>
 </body>
 </html>
