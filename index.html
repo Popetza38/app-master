@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>ระบบวัสดุสิ้นเปลือง</title>
+  <link rel="preload" href="https://cdn-uicons.flaticon.com/2.1.0/uicons-regular-rounded/css/uicons-regular-rounded.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.1.0/uicons-regular-rounded/css/uicons-regular-rounded.css"></noscript>
+  <link rel="stylesheet" href="styles.css?v=13">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+<!-- ========== LOGIN PAGE ========== -->
+<div id="loginPage" class="min-h-screen flex items-center justify-center p-4 relative overflow-hidden login-v2-bg">
+  <!-- Animated Background Elements -->
+  <div class="login-v2-particles" id="login-particles"></div>
+  
+  <!-- Glow Orbs -->
+  <div class="login-v2-glow" style="top: -200px; left: -200px;"></div>
+  <div class="login-v2-glow" style="bottom: -300px; right: -100px; background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%);"></div>
+  
+  <!-- Expanding Rings -->
+  <div class="login-v2-ring" style="top: 50%; left: 50%; width: 300px; height: 300px; margin-top: -150px; margin-left: -150px;"></div>
+  <div class="login-v2-ring" style="top: 50%; left: 50%; width: 500px; height: 500px; margin-top: -250px; margin-left: -250px; animation-delay: 2s;"></div>
+  <div class="login-v2-ring" style="top: 50%; left: 50%; width: 700px; height: 700px; margin-top: -350px; margin-left: -350px; animation-delay: 4s;"></div>
+  
+  <!-- Main Content: Split Layout -->
+  <div class="w-full max-w-[1100px] mx-auto flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 px-6 py-12 relative z-10">
+    
+    <!-- LEFT SIDE: Branding & Illustration (hidden on mobile) -->
+    <div class="hidden lg:flex flex-col items-center justify-center flex-1 max-w-md text-center">
+      <!-- Animated Icon -->
+      <div class="relative w-32 h-32 mb-8">
+        <div class="absolute inset-0 bg-blue-500/10 rounded-full blur-2xl animate-pulse"></div>
+        <div class="relative w-full h-full rounded-3xl bg-gradient-to-br from-blue-600/80 to-purple-600/80 border border-white/10 flex items-center justify-center shadow-2xl login-v2-illustration-icon backdrop-blur-sm">
+          <i class="fi fi-rr-box-alt text-white text-5xl" id="loginLogoIcon"></i>
+          <img id="loginLogoImg" src="" class="w-16 h-16 object-contain hidden" alt="ระบบวัสดุสิ้นเปลือง">
+        </div>
+        <!-- Orbiting dots -->
+        <div class="absolute inset-0 animate-spin-slow" style="animation-duration: 12s;">
+          <div class="absolute top-0 left-1/2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+        </div>
+        <div class="absolute inset-0 animate-spin-slow" style="animation-duration: 18s; animation-direction: reverse;">
+          <div class="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-purple-400 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"></div>
+        </div>
+      </div>
+      
+      <h1 class="text-3xl sm:text-4xl font-black text-white mb-3 tracking-tight leading-tight">
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400" id="loginAppName">ระบบวัสดุสิ้นเปลือง</span>
+      </h1>
+      <p class="text-gray-500 text-sm max-w-xs leading-relaxed">ระบบจัดการวัสดุสิ้นเปลืองแบบครบวงจร พร้อม QR Code และรายงาน</p>
+      
+      <!-- Feature Pills -->
+      <div class="flex flex-wrap justify-center gap-2 mt-8">
+        <span class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 flex items-center gap-1.5">
+          <i class="fi fi-rr-layers text-blue-400"></i> สต็อกคงเหลือ
+        </span>
+        <span class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 flex items-center gap-1.5">
+          <i class="fi fi-rr-qr-scan text-purple-400"></i> QR Code
+        </span>
+        <span class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 flex items-center gap-1.5">
+          <i class="fi fi-rr-chart-histogram text-emerald-400"></i> รายงาน
+        </span>
+      </div>
+    </div>
+    
+    <!-- RIGHT SIDE: Login Card -->
+    <div class="w-full max-w-[420px]">
+      <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" class="login-v2-card card-border-glow rounded-[28px] p-8 sm:p-10 relative overflow-hidden">
+        <!-- Top accent line -->
+        <div class="absolute top-0 left-8 right-8 h-[2px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent rounded-full"></div>
+        
+        <!-- Mobile-only branding -->
+        <div class="lg:hidden text-center mb-8">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-xl">
+            <i class="fi fi-rr-box-alt text-white text-2xl" id="loginLogoIconMobile"></i>
+            <img id="loginLogoImgMobile" src="" class="w-8 h-8 object-contain hidden" alt="ระบบวัสดุสิ้นเปลือง">
+          </div>
+          <h2 class="text-2xl font-bold text-gradient-animated leading-tight" id="loginAppNameMobile">ระบบวัสดุสิ้นเปลือง</h2>
+        </div>
+        
+        <!-- Desktop header -->
+        <div class="hidden lg:block mb-8">
+          <h2 class="text-2xl font-bold text-gradient-animated glow-text">เข้าสู่ระบบ</h2>
+          <p class="text-gray-500 text-sm mt-1">กรอกข้อมูลเพื่อเข้าใช้งานระบบ</p>
+        </div>
+        
+        <div class="space-y-5">
+          <!-- Username -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1.5 ml-1">ชื่อผู้ใช้งาน</label>
+            <div class="relative group">
+              <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-500 group-focus-within:text-blue-400 transition-colors">
+                <i class="fi fi-rr-user"></i>
+              </span>
+              <input type="text" id="loginUsername" required
+                class="w-full pl-11 pr-4 py-3.5 login-v2-input rounded-xl text-white placeholder-gray-600 outline-none text-sm"
+                placeholder="ชื่อผู้ใช้งาน">
+            </div>
+          </div>
+          
+          <!-- Password -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1.5 ml-1">รหัสผ่าน</label>
+            <div class="relative group">
+              <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-500 group-focus-within:text-blue-400 transition-colors">
+                <i class="fi fi-rr-lock"></i>
+              </span>
+              <input type="password" id="loginPassword" required
+                class="w-full pl-11 pr-10 py-3.5 login-v2-input rounded-xl text-white placeholder-gray-600 outline-none text-sm"
+                placeholder="รหัสผ่าน" onkeydown="if(event.key==='Enter')doLogin()">
+              <span class="absolute inset-y-0 right-0 pr-3 flex items-center password-toggle" onclick="togglePass('loginPassword',this)">
+                <i class="fi fi-rr-eye text-gray-500"></i>
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Remember & Forgot -->
+        <div class="flex items-center justify-between mt-5">
+          <label class="flex items-center cursor-pointer group gap-2">
+            <input type="checkbox" id="remember-me" class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500/20 focus:ring-2">
+            <span class="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">จดจำการเข้าระบบ</span>
+          </label>
+          <a href="#" onclick="showForgotModal()" class="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium">ลืมรหัสผ่าน?</a>
+        </div>
+        
+        <!-- Submit -->
+        <div class="mt-7">
+          <button type="submit" id="btnLogin"
+            class="w-full login-v2-btn-primary text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm">
+            <span class="relative z-10">เข้าสู่ระบบ</span>
+            <i class="fi fi-rr-arrow-right text-xs relative z-10"></i>
+            <div class="login-v2-shimmer absolute inset-0"></div>
+          </button>
+        </div>
+        
+        <!-- Footer -->
+        <div class="mt-8 text-center pt-5 border-t border-white/5">
+          <p class="text-gray-500 text-sm">
+            ระบบวัสดุสิ้นเปลือง v1.0 &copy; <span id="loginYear"></span>
+          </p>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ========== MAIN SHELL (hidden until login) ========== -->
+<div id="mainShell" class="hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed left-0 top-0 h-full w-60 bg-navy-800 text-white flex flex-col z-40 transition-transform duration-300 shadow-2xl">
+
+    <!-- Logo -->
+    <div class="p-4 border-b border-navy-700">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow flex-shrink-0 overflow-hidden p-0.5">
+          <i class="fi fi-rr-box-alt text-navy-800 text-lg" id="sidebarLogoIcon"></i>
+          <img id="sidebarLogoImg" src="" class="w-full h-full object-contain hidden" alt="ระบบวัสดุสิ้นเปลือง">
+        </div>
+        <div class="min-w-0">
+          <p id="sidebarAppName" class="font-bold text-sm leading-tight truncate">ระบบวัสดุสิ้นเปลือง</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 overflow-y-auto py-3 px-2 scrollbar-hide">
+
+      <!-- หลัก -->
+      <div class="menu-group" data-section="main">
+        <button class="menu-group-header" onclick="toggleMenuSection('main')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">หลัก</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li>
+              <button onclick="loadPage('dashboard')" data-page="dashboard"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-home w-4 text-center text-base"></i><span>ภาพรวมระบบ</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('stock')" data-page="stock"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-layers w-4 text-center text-base"></i><span>สต็อกคงเหลือ</span>
+                <span id="lowStockBadge" class="hidden ml-auto bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">0</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- คลังวัสดุ -->
+      <div class="menu-group" data-section="inventory" id="menuInventorySection">
+        <button class="menu-group-header" onclick="toggleMenuSection('inventory')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">คลังวัสดุ</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li id="menuItems">
+              <button onclick="loadPage('items')" data-page="items"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-box-open-full w-4 text-center text-base"></i><span>รายการวัสดุ</span>
+              </button>
+            </li>
+            <li id="menuReceive">
+              <button onclick="loadPage('receive')" data-page="receive"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-inbox-in w-4 text-center text-base"></i><span>รับวัสดุเข้าคลัง</span>
+              </button>
+            </li>
+            <li id="menuStocktake">
+              <button onclick="loadPage('stocktake')" data-page="stocktake"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-clipboard-list w-4 text-center text-base"></i><span>นับสต็อก</span>
+              </button>
+            </li>
+            <li id="menuPrintQR">
+              <button onclick="loadPage('printqr')" data-page="printqr"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-print w-4 text-center text-base"></i><span>พิมพ์ QR สติ๊กเกอร์</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- การเบิก -->
+      <div class="menu-group" data-section="withdraw">
+        <button class="menu-group-header" onclick="toggleMenuSection('withdraw')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">การเบิก</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li>
+              <button onclick="loadPage('withdraw')" data-page="withdraw"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-inbox-out w-4 text-center text-base"></i><span>เบิกวัสดุ</span>
+              </button>
+            </li>
+            <li id="menuApprove">
+              <button onclick="loadPage('approve')" data-page="approve"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-check-circle w-4 text-center text-base"></i>
+                <span>อนุมัติการเบิก</span>
+                <span id="pendingBadge" class="hidden ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">0</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('transactions')" data-page="transactions"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-list w-4 text-center text-base"></i><span>ประวัติเคลื่อนไหว</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- รายงาน -->
+      <div class="menu-group" data-section="report" id="menuReportSectionWrap">
+        <button class="menu-group-header" onclick="toggleMenuSection('report')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider" id="menuReportLabel">รายงาน</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3" id="menuReportSection">
+            <li>
+              <button onclick="loadPage('reports')" data-page="reports"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-chart-histogram w-4 text-center text-base"></i><span>รายงาน</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ทะเบียนครุภัณฑ์ -->
+      <div class="menu-group" data-section="asset" id="menuAssetSection">
+        <button class="menu-group-header" onclick="toggleMenuSection('asset')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">ทะเบียนครุภัณฑ์</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li id="menuAssets">
+              <button onclick="loadPage('assets')" data-page="assets"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-box-alt w-4 text-center text-base"></i><span>ทะเบียนครุภัณฑ์</span>
+              </button>
+            </li>
+            <li id="menuAssetStatus">
+              <button onclick="loadPage('assetstatus')" data-page="assetstatus"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-shield-check w-4 text-center text-base"></i><span>อัปเดตสถานภาพ</span>
+              </button>
+            </li>
+            <li id="menuAssetMaintenance">
+              <button onclick="loadPage('assetmaintenance')" data-page="assetmaintenance"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-clipboard-list w-4 text-center text-base"></i><span>ซ่อมบำรุง</span>
+              </button>
+            </li>
+            <li id="menuAssetCommittees">
+              <button onclick="loadPage('assetcommittees')" data-page="assetcommittees"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-users w-4 text-center text-base"></i><span>คณะกรรมการ</span>
+              </button>
+            </li>
+            <li id="menuDepreciation">
+              <button onclick="loadPage('depreciation')" data-page="depreciation"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-chart-pie-alt w-4 text-center text-base"></i><span>ค่าเสื่อม/อายุใช้งาน</span>
+              </button>
+            </li>
+            <li id="menuAssetRegister">
+              <button onclick="loadPage('assetregister')" data-page="assetregister"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-print w-4 text-center text-base"></i><span>ทะเบียนคุมสินทรัพย์</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- รายงานครุภัณฑ์ -->
+      <div class="menu-group" data-section="assetreport" id="menuAssetReportSection">
+        <button class="menu-group-header" onclick="toggleMenuSection('assetreport')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">รายงานครุภัณฑ์</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li id="menuAssetReports">
+              <button onclick="loadPage('assetreports')" data-page="assetreports"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-clipboard-list w-4 text-center text-base"></i><span>รายงานครุภัณฑ์</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- คู่มือ -->
+      <div class="menu-group" data-section="manual">
+        <button class="menu-group-header" onclick="toggleMenuSection('manual')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">คู่มือ</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li>
+              <button onclick="loadPage('manual')" data-page="manual"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-book w-4 text-center text-base"></i><span>คู่มือการใช้งาน</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ตั้งค่าระบบ -->
+      <div class="menu-group" data-section="admin" id="menuAdminSection">
+        <button class="menu-group-header" onclick="toggleMenuSection('admin')">
+          <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">ตั้งค่าระบบ</span>
+          <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
+        </button>
+        <div class="menu-group-body">
+          <ul class="space-y-0.5 mb-3">
+            <li>
+              <button onclick="loadPage('users')" data-page="users"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-users w-4 text-center text-base"></i><span>ผู้ใช้งาน</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('settings')" data-page="settings"
+                class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-settings w-4 text-center text-base"></i><span>ตั้งค่าระบบ</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- User Info -->
+    <div class="p-3 border-t border-navy-700">
+      <div class="flex items-center gap-3 p-2 rounded-xl hover:bg-navy-700 cursor-pointer transition" onclick="loadPage('profile')">
+        <div id="sidebarAvatar" class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+          <i class="fi fi-rr-user text-white text-sm"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p id="sidebarName" class="text-sm font-medium text-white truncate">—</p>
+          <p id="sidebarRole" class="text-xs text-blue-300 truncate">—</p>
+        </div>
+        <button onclick="event.stopPropagation(); doLogout()" title="ออกจากระบบ" class="text-blue-400 hover:text-white transition">
+          <i class="fi fi-rr-sign-out text-sm"></i>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Mobile sidebar overlay -->
+  <div id="sidebarOverlay" class="fixed inset-0 bg-black/50 z-30 hidden lg:hidden" onclick="toggleSidebar()"></div>
+
+  <!-- Main Content Area -->
+  <main class="lg:ml-60 min-h-screen bg-gray-50 flex flex-col">
+
+    <!-- Top Bar -->
+    <header id="topbar" class="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 lg:px-6 py-3 flex items-center justify-between shadow-sm">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <button class="lg:hidden text-gray-500 hover:text-gray-700" onclick="toggleSidebar()">
+          <i class="fi fi-rr-menu-burger text-xl"></i>
+        </button>
+        <div class="hidden sm:block">
+          <h2 id="pageTitle" class="font-bold text-gray-800 text-base">ภาพรวมระบบ</h2>
+          <p id="pageBreadcrumb" class="text-xs text-gray-400 hidden lg:block">ระบบวัสดุสิ้นเปลือง / ภาพรวมระบบ</p>
+        </div>
+        <!-- Global Search -->
+        <div class="relative flex-1 max-w-md ml-2">
+          <i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+          <input type="text" id="globalSearch" placeholder="ค้นหาวัสดุเร็ว..." onkeyup="debounceGlobalSearch()" class="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 bg-gray-50">
+          <div id="globalSearchResults" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto"></div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="topDateTime" class="text-xs text-gray-500 hidden lg:block"></span>
+        <button onclick="loadPage('profile')" class="w-8 h-8 bg-navy-700 rounded-xl flex items-center justify-center hover:bg-navy-800 transition" title="โปรไฟล์">
+          <i class="fi fi-rr-user text-white text-sm"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div id="mainContent" class="flex-1 p-4 lg:p-6">
+      <!-- โหลดจาก JS -->
+    </div>
+  </main>
+
+</div>
+
+<!-- ========== GLOBAL MODALS ========== -->
+
+<!-- Modal Container -->
+<div id="modalOverlay" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
+  <div id="modalBox" class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+      <h3 id="modalTitle" class="text-base font-bold text-gray-800"></h3>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 transition">
+        <i class="fi fi-rr-cross text-sm"></i>
+      </button>
+    </div>
+    <div id="modalBody" class="p-6 overflow-y-auto flex-1"></div>
+    <div id="modalFooter" class="flex justify-end gap-3 px-6 py-4 border-t flex-shrink-0"></div>
+  </div>
+</div>
+
+<!-- Forgot Password Modal -->
+<div id="forgotModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+    <h3 class="font-bold text-gray-800 mb-1">ลืมรหัสผ่าน</h3>
+    <p class="text-sm text-gray-500 mb-4">กรอกอีเมลที่ลงทะเบียนไว้ เพื่อรับรหัสผ่านชั่วคราว</p>
+    <input type="email" id="forgotEmail" placeholder="อีเมลของคุณ"
+      class="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 mb-4">
+    <div class="flex gap-2">
+      <button onclick="closeForgotModal()" class="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+      <button onclick="submitForgotPassword()" class="flex-1 py-2.5 bg-navy-700 text-white rounded-xl text-sm hover:bg-navy-800 font-medium">ส่งรหัสผ่าน</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black/40 z-[60] hidden flex items-center justify-center">
+  <div class="bg-white rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl">
+    <div class="w-8 h-8 border-4 border-navy-600 border-t-transparent rounded-full animate-spin"></div>
+    <span class="text-gray-700 font-medium text-sm" id="loadingText">กำลังโหลด...</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="api.js?v=3"></script>
+<script src="mock-api.js"></script>
+<script src="app.js?v=33"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function(){});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Google Apps Script files
+code.gs
+.clasp.json
+push.bat
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (if any)
+node_modules/
+
+# Logs
+*.log
