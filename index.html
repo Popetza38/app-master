@@ -392,8 +392,9 @@
     <!-- User Info -->
     <div class="p-3 border-t border-navy-700">
       <div class="flex items-center gap-3 p-2 rounded-xl hover:bg-navy-700 cursor-pointer transition" onclick="loadPage('profile')">
-        <div id="sidebarAvatar" class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
-          <i class="fi fi-rr-user text-white text-sm"></i>
+        <div id="sidebarAvatar" class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <i id="sidebarAvatarIcon" class="fi fi-rr-user text-white text-sm"></i>
+          <img id="sidebarAvatarImg" src="" class="w-full h-full object-cover hidden" alt="โปรไฟล์">
         </div>
         <div class="flex-1 min-w-0">
           <p id="sidebarName" class="text-sm font-medium text-white truncate">—</p>
@@ -428,8 +429,9 @@
       </div>
       <div class="flex items-center gap-2">
         <span id="topDateTime" class="text-xs text-gray-500 hidden lg:block"></span>
-        <button onclick="loadPage('profile')" class="w-9 h-9 bg-gradient-to-br from-navy-700 to-navy-800 rounded-xl flex items-center justify-center hover:from-navy-800 hover:to-navy-900 transition-all duration-200 shadow-md hover:shadow-lg" title="โปรไฟล์">
-          <i class="fi fi-rr-user text-white text-sm"></i>
+        <button onclick="loadPage('profile')" class="w-9 h-9 bg-gradient-to-br from-navy-700 to-navy-800 rounded-xl flex items-center justify-center hover:from-navy-800 hover:to-navy-900 transition-all duration-200 shadow-md hover:shadow-lg overflow-hidden" title="โปรไฟล์">
+          <i id="topbarAvatarIcon" class="fi fi-rr-user text-white text-sm"></i>
+          <img id="topbarAvatarImg" src="" class="w-full h-full object-cover hidden" alt="โปรไฟล์">
         </button>
       </div>
     </header>

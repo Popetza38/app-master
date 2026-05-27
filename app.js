@@ -571,6 +571,9 @@ function showMainShell() {
   document.getElementById('menuAssetSection').style.display   = notEmp ? '' : 'none';
   document.getElementById('menuAssets').style.display          = isAdmin ? '' : 'none';
   document.getElementById('menuAssetStatus').style.display   = notEmp ? '' : 'none';
+  
+  // Load user avatar
+  loadUserAvatar();
   document.getElementById('menuAssetMaintenance').style.display = notEmp ? '' : 'none';
   document.getElementById('menuAssetCommittees').style.display = notEmp ? '' : 'none';
   document.getElementById('menuDepreciation').style.display = notEmp ? '' : 'none';
@@ -2828,6 +2831,49 @@ function exportLowStock() {
 }
 
 // ===== PROFILE =====
+function loadUserAvatar() {
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    if (res.success && res.data) {
+      var user = res.data.find(function(u){ return u.id === AUTH.user.id; });
+      if (user && user.avatar) {
+        updateAvatarDisplay(user.avatar);
+      }
+    }
+  }).catch(function() {});
+}
+
+function updateAvatarDisplay(avatarFileId) {
+  var avatarUrl = avatarFileId ? getFileDataUrl(avatarFileId) : '';
+  
+  // Update sidebar avatar
+  var sidebarImg = document.getElementById('sidebarAvatarImg');
+  var sidebarIcon = document.getElementById('sidebarAvatarIcon');
+  if (sidebarImg && sidebarIcon) {
+    if (avatarUrl) {
+      sidebarImg.src = avatarUrl;
+      sidebarImg.classList.remove('hidden');
+      sidebarIcon.classList.add('hidden');
+    } else {
+      sidebarImg.classList.add('hidden');
+      sidebarIcon.classList.remove('hidden');
+    }
+  }
+  
+  // Update top bar avatar
+  var topbarImg = document.getElementById('topbarAvatarImg');
+  var topbarIcon = document.getElementById('topbarAvatarIcon');
+  if (topbarImg && topbarIcon) {
+    if (avatarUrl) {
+      topbarImg.src = avatarUrl;
+      topbarImg.classList.remove('hidden');
+      topbarIcon.classList.add('hidden');
+    } else {
+      topbarImg.classList.add('hidden');
+      topbarIcon.classList.remove('hidden');
+    }
+  }
+}
+
 function renderProfile() {
   showLoading('โหลดโปรไฟล์...');
   callAPI('getUsers', AUTH.token).then(function(res) {
