@@ -2979,20 +2979,37 @@ function doChangePassword() {
 function uploadAvatar(event) {
   var file = event.target.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2 MB'); return; }
+  if (file.size > 20 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 20 MB'); return; }
   showLoading('กำลังอัปโหลดรูป...');
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
-    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
-      hideLoading();
-      if (res.success) {
-        callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
-          showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
-          renderProfile();
-        });
-      } else showError(res.message);
-    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    // Get drive folder ID from config
+    callAPI('getConfig', AUTH.token).then(function(cfgRes) {
+      var folderId = (cfgRes.data && cfgRes.data.drive_folder_id) || '';
+      callAPI('uploadFile', AUTH.token, base64, file.type, file.name, folderId).then(function(res) {
+        hideLoading();
+        if (res.success) {
+          callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
+            showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
+            renderProfile();
+            loadUserAvatar(); // Update avatar display
+          });
+        } else showError(res.message);
+      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    }).catch(function() {
+      // Fallback without folder ID if config fails
+      callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+        hideLoading();
+        if (res.success) {
+          callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
+            showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
+            renderProfile();
+            loadUserAvatar();
+          });
+        } else showError(res.message);
+      }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+    });
   };
   reader.readAsDataURL(file);
 }
@@ -3182,7 +3199,7 @@ function buildSettingsPage(cfg) {
   if (logoImgSrc) {
     html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><div class="flex items-center gap-3"><img id="cfgLogoPreview" src="' + logoImgSrc + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div><input type="hidden" id="cfgLogoFileId" value="' + (_configLogoFileId||'') + '"></div>';
   } else {
-    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 2MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
+    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 20MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
   }
   html += '</div></div>';
 
@@ -3206,6 +3223,19 @@ function buildSettingsPage(cfg) {
   html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-layers text-navy-600"></i> การตั้งค่าสต็อก</h3></div>';
   html += '<div class="card-body">';
   html += fieldHTML('ระดับสต็อกขั้นต่ำเริ่มต้น', 'cfgLowStock', 'number', cfg.low_stock_threshold||5);
+  html += '</div></div>';
+
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-folder-open text-navy-600"></i> การตั้งค่าการจัดเก็บไฟล์</h3></div>';
+  html += '<div class="card-body space-y-4">';
+  html += '<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">';
+  html += '<p class="font-semibold mb-1">วิธีหา Google Drive Folder ID</p>';
+  html += '<ol class="list-decimal list-inside space-y-0.5">';
+  html += '<li>เปิดโฟลเดอร์ใน Google Drive</li>';
+  html += '<li>ดู URL ในช่อง address bar</li>';
+  html += '<li>คัดลอกส่วนหลัง /folders/ เช่น: 1A2b3C4d5E6f7G8h9I0jK</li>';
+  html += '</ol></div>';
+  html += fieldHTML('Google Drive Folder ID สำหรับเก็บรูปภาพ', 'cfgDriveFolderId', 'text', cfg.drive_folder_id||'', '');
+  html += '<p class="text-xs text-gray-400 mt-1">เว้นว่างไว้หากต้องการเก็บใน Root ของ Drive</p>';
   html += '</div></div>';
 
   // ===== MASTER DATA: Asset Categories =====
@@ -3282,7 +3312,8 @@ function saveSettings() {
     telegram_bot_token:    (document.getElementById('cfgTgToken')||{}).value||'',
     telegram_chat_id:      (document.getElementById('cfgTgChatId')||{}).value||'',
     low_stock_threshold:   parseInt((document.getElementById('cfgLowStock')||{}).value||5),
-    app_logo:              (document.getElementById('cfgLogoFileId')||{}).value||_configLogoFileId||''
+    app_logo:              (document.getElementById('cfgLogoFileId')||{}).value||_configLogoFileId||'',
+    drive_folder_id:       (document.getElementById('cfgDriveFolderId')||{}).value||''
   };
   showLoading('กำลังบันทึก...');
   callAPI('saveConfig', AUTH.token, data).then(function(res) {
@@ -3322,7 +3353,7 @@ function handleLogoUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2MB'); input.value=''; return; }
+  if (file.size > 20 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 20MB'); input.value=''; return; }
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
