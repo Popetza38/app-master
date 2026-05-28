@@ -286,7 +286,7 @@ function initApp() {
   callAPI('validateSession', AUTH.token).then(function(session) {
     hideLoading();
     if (!session) { AUTH.clear(); showLoginPage(); return; }
-    AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name };
+    AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name, avatar: session.avatar||'' };
     localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
@@ -421,6 +421,28 @@ function showMainShell() {
   document.getElementById('menuAssetMaintenance').style.display = notEmp ? '' : 'none';
   document.getElementById('menuAssetCommittees').style.display = notEmp ? '' : 'none';
   document.getElementById('menuAssetReports').style.display  = notEmp ? '' : 'none';
+  // แสดง avatar ใน sidebar (ถ้ามีใน cache)
+  if (AUTH.user.avatar) {
+    var avatarUrl = imgUrl(AUTH.user.avatar);
+    var sidebarAvatar = document.getElementById('sidebarAvatar');
+    if (sidebarAvatar && avatarUrl) {
+      sidebarAvatar.innerHTML = '<img src="' + avatarUrl + '" class="w-full h-full object-cover rounded-xl">';
+    }
+  }
+  // โหลด avatar จาก server ใน background (เผื่อ localStorage ไม่มี field avatar)
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    var users = (res && res.data) || [];
+    var me = users.find(function(u){ return u.id === AUTH.user.id; });
+    if (me && me.avatar) {
+      AUTH.user.avatar = me.avatar;
+      localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+      var avatarUrl = imgUrl(me.avatar);
+      var sidebarAvatar = document.getElementById('sidebarAvatar');
+      if (sidebarAvatar && avatarUrl) {
+        sidebarAvatar.innerHTML = '<img src="' + avatarUrl + '" class="w-full h-full object-cover rounded-xl">';
+      }
+    }
+  }).catch(function(){});
   updateClock();
   setInterval(updateClock, 60000);
 }
@@ -2594,8 +2616,15 @@ function buildProfilePage(user) {
   html += '<div class="card p-6">';
   html += '<div class="flex items-center gap-5 mb-6">';
   html += '<div class="relative">';
-  html += '<div class="w-20 h-20 rounded-2xl bg-navy-100 flex items-center justify-center overflow-hidden shadow">';
-  html += '<i class="fi fi-rr-user text-navy-600 text-3xl"></i>';
+  html += '<div id="profileAvatarWrap" class="w-20 h-20 rounded-2xl bg-navy-100 flex items-center justify-center overflow-hidden shadow">';
+  // แสดงรูป avatar ถ้ามี
+  var avatarSrc = user.avatar ? imgUrl(user.avatar) : '';
+  if (avatarSrc) {
+    html += '<img id="profileAvatarImg" src="' + avatarSrc + '" class="w-full h-full object-cover" onerror="this.style.display=\'none\';document.getElementById(\'profileAvatarIcon\').style.display=\'\'">';
+    html += '<i id="profileAvatarIcon" class="fi fi-rr-user text-navy-600 text-3xl" style="display:none"></i>';
+  } else {
+    html += '<i id="profileAvatarIcon" class="fi fi-rr-user text-navy-600 text-3xl"></i>';
+  }
   html += '</div>';
   html += '<label class="absolute -bottom-1 -right-1 w-6 h-6 bg-navy-700 rounded-lg flex items-center justify-center cursor-pointer hover:bg-navy-800 transition">';
   html += '<i class="fi fi-rr-camera text-white text-xs"></i>';
@@ -2680,19 +2709,51 @@ function doChangePassword() {
 function uploadAvatar(event) {
   var file = event.target.files[0];
   if (!file) return;
-  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 10 MB'); return; }
+  if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); return; }
+  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 5 MB'); return; }
+  // แสดง local preview ทันที
+  var localReader = new FileReader();
+  localReader.onload = function(ev) {
+    var wrap = document.getElementById('profileAvatarWrap');
+    if (wrap) {
+      wrap.innerHTML = '<img id="profileAvatarImg" src="' + ev.target.result + '" class="w-full h-full object-cover">';
+    }
+  };
+  localReader.readAsDataURL(file);
+  // upload จริง
   showLoading('กำลังอัปโหลดรูป...');
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
     callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
-      hideLoading();
       if (res.success) {
-        callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
-          showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
-          renderProfile();
-        });
-      } else showError(res.message);
+        callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function(upRes) {
+          hideLoading();
+          if (upRes.success) {
+            // อัปเดต AUTH.user
+            AUTH.user.avatar = res.file_id;
+            localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+            // อัปเดต avatar ใน sidebar
+            var sidebarAvatar = document.getElementById('sidebarAvatar');
+            var avatarUrl = imgUrl(res.file_id);
+            if (sidebarAvatar && avatarUrl) {
+              sidebarAvatar.innerHTML = '<img src="' + avatarUrl + '" class="w-full h-full object-cover rounded-xl">';
+            }
+            // อัปเดต preview ให้ใช้ URL จาก server
+            var wrap = document.getElementById('profileAvatarWrap');
+            if (wrap && avatarUrl) {
+              wrap.innerHTML = '<img id="profileAvatarImg" src="' + avatarUrl + '" class="w-full h-full object-cover">';
+            }
+            showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
+          } else {
+            hideLoading();
+            showError(upRes.message || 'บันทึกรูปไม่สำเร็จ');
+          }
+        }).catch(function() { hideLoading(); showError('บันทึกรูปไม่สำเร็จ'); });
+      } else {
+        hideLoading();
+        showError(res.message || 'อัปโหลดไม่สำเร็จ');
+      }
     }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
   };
   reader.readAsDataURL(file);
