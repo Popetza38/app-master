@@ -677,37 +677,14 @@ function renderDashboard() {
 
     html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm">รายการเคลื่อนไหวล่าสุด</h3>';
     html += '<button onclick="loadPage(\'transactions\')" class="text-xs text-navy-600 hover:underline">ดูทั้งหมด</button></div>';
-    html += '<div class="card-body p-0"><div class="divide-y">';
-    if (d.recent_transactions && d.recent_transactions.length > 0) {
-      d.recent_transactions.slice(0,6).forEach(function(t) {
-        var isR = t.type === 'receive';
-        html += '<div class="flex items-center gap-3 px-4 py-3">';
-        html += '<div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ' + (isR ? 'bg-blue-100':'bg-purple-100') + '">';
-        html += '<i class="fi ' + (isR?'fi-rr-inbox-in text-blue-600':'fi-rr-inbox-out text-purple-600') + ' text-sm"></i></div>';
-        html += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(t.item_name) + '</p>';
-        html += '<p class="text-xs text-gray-400">' + (isR?'+':'-') + t.quantity + ' ' + t.unit + ' • ' + (t.actor_name||'-') + '</p></div>';
-        html += '<span class="text-xs text-gray-400 flex-shrink-0">' + formatDate(t.date) + '</span></div>';
-      });
-    } else { html += '<p class="text-center text-xs text-gray-400 py-6">ยังไม่มีรายการ</p>'; }
+    html += '<div class="card-body p-0"><div class="divide-y" id="dashRecentTx">';
+    html += '<p class="text-center text-xs text-gray-400 py-6">กำลังโหลด...</p>';
     html += '</div></div></div>';
 
     html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm">คำขอเบิกรออนุมัติ</h3>';
     if (AUTH.user.role === 'admin') html += '<button onclick="loadPage(\'approve\')" class="text-xs text-navy-600 hover:underline">จัดการ</button>';
-    html += '</div><div class="card-body p-0"><div class="divide-y">';
-    if (d.recent_pending && d.recent_pending.length > 0) {
-      d.recent_pending.forEach(function(w) {
-        html += '<div class="flex items-center gap-3 px-4 py-3">';
-        html += '<div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-time-forward text-amber-600 text-sm"></i></div>';
-        html += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(w.item_name) + '</p>';
-        html += '<p class="text-xs text-gray-400">' + w.quantity_requested + ' ' + w.unit + ' • ' + escHtml(w.requested_by_name) + '</p></div>';
-        if (AUTH.user.role === 'admin') {
-          html += '<div class="flex gap-1 flex-shrink-0">';
-          html += '<button onclick="quickApprove(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-check"></i></button>';
-          html += '<button onclick="quickReject(\'' + w.id + '\')" class="btn-danger btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-cross"></i></button></div>';
-        }
-        html += '</div>';
-      });
-    } else { html += '<p class="text-center text-xs text-gray-400 py-6">ไม่มีคำขอรออนุมัติ</p>'; }
+    html += '</div><div class="card-body p-0"><div class="divide-y" id="dashRecentPending">';
+    html += '<p class="text-center text-xs text-gray-400 py-6">กำลังโหลด...</p>';
     html += '</div></div></div>';
 
     html += '</div>';
@@ -729,6 +706,46 @@ function renderDashboard() {
 
     html += '</div>';
     document.getElementById('mainContent').innerHTML = html;
+
+    // เติมข้อมูลการ์ดรายการล่าสุดแบบแยกส่วน (widget-level progressive render)
+    (function renderRecentTxWidget(){
+      var host = document.getElementById('dashRecentTx');
+      if (!host) return;
+      var tx = (d.recent_transactions || []).slice(0,6);
+      if (tx.length === 0) { host.innerHTML = '<p class="text-center text-xs text-gray-400 py-6">ยังไม่มีรายการ</p>'; return; }
+      var txHtml = '';
+      tx.forEach(function(t) {
+        var isR = t.type === 'receive';
+        txHtml += '<div class="flex items-center gap-3 px-4 py-3">';
+        txHtml += '<div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ' + (isR ? 'bg-blue-100':'bg-purple-100') + '">';
+        txHtml += '<i class="fi ' + (isR?'fi-rr-inbox-in text-blue-600':'fi-rr-inbox-out text-purple-600') + ' text-sm"></i></div>';
+        txHtml += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(t.item_name) + '</p>';
+        txHtml += '<p class="text-xs text-gray-400">' + (isR?'+':'-') + t.quantity + ' ' + (t.unit||'') + ' • ' + (t.actor_name||'-') + '</p></div>';
+        txHtml += '<span class="text-xs text-gray-400 flex-shrink-0">' + formatDate(t.date) + '</span></div>';
+      });
+      host.innerHTML = txHtml;
+    })();
+
+    (function renderRecentPendingWidget(){
+      var host = document.getElementById('dashRecentPending');
+      if (!host) return;
+      var pending = d.recent_pending || [];
+      if (pending.length === 0) { host.innerHTML = '<p class="text-center text-xs text-gray-400 py-6">ไม่มีคำขอรออนุมัติ</p>'; return; }
+      var pHtml = '';
+      pending.forEach(function(w) {
+        pHtml += '<div class="flex items-center gap-3 px-4 py-3">';
+        pHtml += '<div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-time-forward text-amber-600 text-sm"></i></div>';
+        pHtml += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(w.item_name) + '</p>';
+        pHtml += '<p class="text-xs text-gray-400">' + w.quantity_requested + ' ' + w.unit + ' • ' + escHtml(w.requested_by_name) + '</p></div>';
+        if (AUTH.user.role === 'admin') {
+          pHtml += '<div class="flex gap-1 flex-shrink-0">';
+          pHtml += '<button onclick="quickApprove(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-check"></i></button>';
+          pHtml += '<button onclick="quickReject(\'' + w.id + '\')" class="btn-danger btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-cross"></i></button></div>';
+        }
+        pHtml += '</div>';
+      });
+      host.innerHTML = pHtml;
+    })();
 
     setTimeout(function() {
       if (_charts.monthly) _charts.monthly.destroy();
