@@ -1,4 +1,4 @@
-<script>
+﻿<script>
 // ============================================================
 // js4.html — Reports | Profile | Users | Settings
 // ============================================================
@@ -369,7 +369,7 @@ function doChangePassword() {
 function uploadAvatar(event) {
   var file = event.target.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2 MB'); return; }
+  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 10 MB'); return; }
   showLoading('กำลังอัปโหลดรูป...');
   var reader = new FileReader();
   reader.onload = function(e) {

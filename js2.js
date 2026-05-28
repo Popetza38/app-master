@@ -1,4 +1,4 @@
-<script>
+﻿<script>
 // ============================================================
 // js2.html — Items (คลัง) | Stock | Receive | QR Generator
 // ============================================================
@@ -228,7 +228,7 @@ function handleItemImageUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value=''; return; }
+  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 10MB'); input.value=''; return; }
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];

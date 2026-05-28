@@ -163,11 +163,11 @@
   window._mockAPI = {
 
     // --- Auth ---
-    login: function(username, password, role) {
+    login: function(username, password) {
       var users = _get('users') || [];
       var u = users.find(function(x){ return x.username === username && x.password === password; });
       if (!u) return { success:false, message:'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
-      if (u.role !== role) return { success:false, message:'บทบาทไม่ตรงกับบัญชีผู้ใช้' };
+      if (u.active === false) return { success:false, message:'บัญชีนี้ถูกระงับการใช้งาน' };
       u.token = 'tok_' + u.id + '_' + Date.now();
       u.last_login = _now();
       _set('users', users);
@@ -208,15 +208,34 @@
       var catMap = {};
       items.forEach(function(i){ if(i.active!==false){ catMap[i.category]=(catMap[i.category]||0)+1; } });
 
+      var tx = _get('transactions') || [];
+      var recentTx = tx.slice().sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); }).slice(0,6).map(function(t){
+        var item = items.find(function(i){ return i.id === t.item_id; });
+        return { id:t.id, type:t.type, item_name:t.item_name||'', quantity:t.quantity, unit:(item&&item.unit)||'', actor_name:t.user_name||'', date:t.date };
+      });
+      var recentPending = withdrawals.filter(function(w){ return w.status==='pending'; }).slice(0,5).map(function(w){
+        var item = items.find(function(i){ return i.id === w.item_id; });
+        return { id:w.id, item_name:(item&&item.name)||'', quantity_requested:w.quantity, unit:(item&&item.unit)||'', requested_by_name:w.user_name||'' };
+      });
+      // Top 5 items by withdrawal
+      var wdCount = {};
+      withdrawals.filter(function(w){ return w.status==='approved'; }).forEach(function(w){
+        wdCount[w.item_id] = (wdCount[w.item_id]||0) + w.quantity;
+      });
+      var topItems = Object.keys(wdCount).map(function(id){
+        var item = items.find(function(i){ return i.id===id; });
+        return { id:id, name:(item&&item.name)||id, qty:wdCount[id] };
+      }).sort(function(a,b){ return b.qty-a.qty; }).slice(0,5);
+
       return {
         success:true,
         kpi:{ total_items: items.filter(function(i){ return i.active!==false; }).length, low_stock: lowItems.length, pending: pending, today_tx: todayTx },
         low_stock_items: lowItems,
-        monthly_stats: { labels:labels, received:received, withdrawn:withdrawn },
-        category_stats: { labels:Object.keys(catMap), data:Object.values(catMap) },
-        wd_trend: { labels:labels, data:withdrawn },
-        wd_by_category: { labels:Object.keys(catMap), data:Object.values(catMap).map(function(){ return 0; }) },
-        monthly: labels.map(function(l, idx){ return { label:l, receive:received[idx], withdraw:withdrawn[idx] }; })
+        monthly: labels.map(function(l, idx){ return { label:l, receive:received[idx], withdraw:withdrawn[idx] }; }),
+        category_stock: catMap,
+        recent_transactions: recentTx,
+        recent_pending: recentPending,
+        top_items: topItems
       };
     },
 
@@ -271,9 +290,19 @@
     // --- Withdrawals ---
     getWithdrawals: function(token, filter) {
       var wd = _get('withdrawals') || [];
+      var items = _get('items') || [];
       if (filter && filter.status && filter.status !== 'all') {
         wd = wd.filter(function(w){ return w.status === filter.status; });
       }
+      // เติม item_name, unit, requested_by_name
+      wd = wd.map(function(w) {
+        var item = items.find(function(i){ return i.id === w.item_id; });
+        return Object.assign({}, w, {
+          item_name: (item && item.name) || w.item_id,
+          unit: (item && item.unit) || '',
+          requested_by_name: w.user_name || ''
+        });
+      });
       return { success:true, data: wd };
     },
     addWithdrawal: function(token, data) {
@@ -318,9 +347,31 @@
       _set('withdrawals', wd);
       return { success:true, message:'ปฏิเสธคำขอแล้ว' };
     },
+    cancelWithdrawal: function(token, wdId) {
+      var wd = _get('withdrawals') || [];
+      var idx = wd.findIndex(function(w){ return w.id === wdId; });
+      if (idx === -1) return { success:false, message:'ไม่พบคำขอ' };
+      if (wd[idx].status !== 'pending') return { success:false, message:'ยกเลิกได้เฉพาะคำขอที่รออนุมัติ' };
+      wd[idx].status = 'cancelled';
+      _set('withdrawals', wd);
+      return { success:true, message:'ยกเลิกคำขอแล้ว' };
+    },
 
     // --- Transactions ---
-    getTransactions: function(token) { return { success:true, data: _get('transactions') || [] }; },
+    getTransactions: function(token) {
+      var tx = _get('transactions') || [];
+      var items = _get('items') || [];
+      tx = tx.map(function(t) {
+        var item = items.find(function(i){ return i.id === t.item_id; });
+        return Object.assign({}, t, {
+          actor_name: t.user_name || '',
+          unit: (item && item.unit) || '',
+          stock_before: 0,
+          stock_after: 0
+        });
+      });
+      return { success:true, data: tx };
+    },
 
     // --- Users ---
     getUsers: function(token) { return { success:true, data: _get('users') || [] }; },

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // app.js — Frontend (Static Site)
 // ============================================================
 
@@ -7,31 +7,6 @@
 // ===== CONSTANTS =====
 var ITEMS_PER_PAGE = 20;
 var ROLE_LABELS = { admin:'ผู้ดูแลระบบ', staff:'เจ้าหน้าที่คลัง', employee:'พนักงาน' };
-
-// ===== LOGIN PARTICLES ANIMATION =====
-function initLoginParticles() {
-  var container = document.getElementById('login-particles');
-  if (!container) return;
-  
-  var particleCount = 30;
-  for (var i = 0; i < particleCount; i++) {
-    var particle = document.createElement('div');
-    particle.className = 'login-v2-particle';
-    
-    var size = Math.random() * 4 + 2;
-    var left = Math.random() * 100;
-    var duration = Math.random() * 15 + 10;
-    var delay = Math.random() * 10;
-    
-    particle.style.width = size + 'px';
-    particle.style.height = size + 'px';
-    particle.style.left = left + '%';
-    particle.style.animationDuration = duration + 's';
-    particle.style.animationDelay = delay + 's';
-    
-    container.appendChild(particle);
-  }
-}
 
 // ===== URL PARAMS (for QR) =====
 var _QR_ACTION = '';
@@ -59,7 +34,7 @@ var AUTH = {
   }
 };
 
-// ===== LOADING =====
+// ===== LOADING (Overlay) =====
 function showLoading(text) {
   document.getElementById('loadingText').textContent = text || 'กำลังโหลด...';
   document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -68,222 +43,84 @@ function hideLoading() {
   document.getElementById('loadingOverlay').classList.add('hidden');
 }
 
-// ===== BACKGROUND LOADING MANAGER =====
-var BackgroundLoader = (function() {
-  var cache = {};
-  var loadingPromises = {};
-  var errorCallbacks = {};
-  var CACHE_TTL = 60000; // 1 minute cache
-  var MAX_RETRIES = 3;
-  var RETRY_DELAY = 1000;
-  var indicatorElement = null;
+// ===== BACKGROUND LOADING INDICATOR =====
+var _bgLoadingCount = 0;
+var _bgLoadingTimer = null;
 
-  function getCacheKey(key) {
-    return key;
+function showBgLoading(text) {
+  _bgLoadingCount++;
+  var el = document.getElementById('bgLoadingIndicator');
+  var txt = document.getElementById('bgLoadingText');
+  if (el) {
+    if (txt) txt.textContent = text || 'กำลังโหลดข้อมูล...';
+    el.classList.remove('hidden-indicator');
   }
+}
 
-  function isCacheValid(entry) {
-    return entry && (Date.now() - entry.timestamp) < CACHE_TTL;
+function hideBgLoading() {
+  _bgLoadingCount = Math.max(0, _bgLoadingCount - 1);
+  if (_bgLoadingCount === 0) {
+    clearTimeout(_bgLoadingTimer);
+    _bgLoadingTimer = setTimeout(function() {
+      var el = document.getElementById('bgLoadingIndicator');
+      if (el) el.classList.add('hidden-indicator');
+    }, 400);
   }
+}
 
-  function loadWithRetry(apiFn, args, retries) {
-    return callAPI.apply(null, [apiFn].concat(args)).catch(function(err) {
-      if (retries < MAX_RETRIES) {
-        console.warn('[BackgroundLoader] Retry ' + (retries + 1) + '/' + MAX_RETRIES + ' for', apiFn);
-        return new Promise(function(resolve) {
-          setTimeout(function() {
-            resolve(loadWithRetry(apiFn, args, retries + 1));
-          }, RETRY_DELAY * (retries + 1));
-        });
-      }
-      throw err;
-    });
-  }
-
-  function showIndicator() {
-    if (indicatorElement) return;
-    indicatorElement = document.createElement('div');
-    indicatorElement.className = 'bg-loading-indicator';
-    indicatorElement.innerHTML = '<div class="bg-loading-spinner"></div><span>กำลังโหลดข้อมูลเพิ่มเติม...</span>';
-    document.body.appendChild(indicatorElement);
-  }
-
-  function hideIndicator() {
-    if (indicatorElement) {
-      indicatorElement.remove();
-      indicatorElement = null;
-    }
-  }
-
-  function updateIndicator() {
-    var isLoading = Object.keys(loadingPromises).length > 0;
-    if (isLoading) {
-      showIndicator();
-    } else {
-      hideIndicator();
-    }
-  }
-
-  return {
-    preload: function(key, apiFn, args) {
-      var cacheKey = getCacheKey(key);
-      
-      // Return cached data if valid
-      if (cache[cacheKey] && isCacheValid(cache[cacheKey])) {
-        return Promise.resolve(cache[cacheKey].data);
-      }
-
-      // Return existing promise if already loading
-      if (loadingPromises[cacheKey]) {
-        return loadingPromises[cacheKey];
-      }
-
-      // Start new loading
-      var promise = loadWithRetry(apiFn, args, 0)
-        .then(function(res) {
-          if (res && res.success) {
-            cache[cacheKey] = {
-              data: res.data,
-              timestamp: Date.now()
-            };
-            delete loadingPromises[cacheKey];
-            updateIndicator();
-            return res.data;
-          }
-          delete loadingPromises[cacheKey];
-          updateIndicator();
-          throw new Error(res.message || 'Load failed');
-        })
-        .catch(function(err) {
-          delete loadingPromises[cacheKey];
-          updateIndicator();
-          if (errorCallbacks[cacheKey]) {
-            errorCallbacks[cacheKey](err);
-          }
-          throw err;
-        });
-
-      loadingPromises[cacheKey] = promise;
-      updateIndicator();
-      return promise;
-    },
-
-    get: function(key) {
-      var cacheKey = getCacheKey(key);
-      if (cache[cacheKey] && isCacheValid(cache[cacheKey])) {
-        return cache[cacheKey].data;
-      }
-      return null;
-    },
-
-    invalidate: function(key) {
-      var cacheKey = getCacheKey(key);
-      delete cache[cacheKey];
-    },
-
-    invalidateAll: function() {
-      cache = {};
-    },
-
-    isLoading: function(key) {
-      var cacheKey = getCacheKey(key);
-      return !!loadingPromises[cacheKey];
-    },
-
-    onError: function(key, callback) {
-      var cacheKey = getCacheKey(key);
-      errorCallbacks[cacheKey] = callback;
-    },
-
-    preloadMainData: function() {
-      // Preload commonly used data in background
-      var token = AUTH.token;
-      if (!token) return Promise.resolve();
-
-      return Promise.all([
-        this.preload('items', 'getItems', [token]).catch(function() {}),
-        this.preload('stock', 'getItems', [token]).catch(function() {}),
-        this.preload('withdrawals', 'getWithdrawals', [token, { status: 'all' }]).catch(function() {}),
-        this.preload('receives', 'getReceives', [token, {}]).catch(function() {}),
-        this.preload('transactions', 'getTransactions', [token, {}]).catch(function() {}),
-        this.preload('users', 'getUsers', [token]).catch(function() {})
-      ]);
-    }
-  };
-})();
-
-// ===== SKELETON LOADING HELPERS =====
-function renderSkeletonCard(count) {
+// ===== SKELETON HELPERS =====
+function skeletonKPICards() {
   var html = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
-  for (var i = 0; i < count; i++) {
-    html += '<div class="card p-4"><div class="skeleton skeleton-card mb-3"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text-sm"></div></div>';
+  for (var i = 0; i < 4; i++) {
+    html += '<div class="card p-4"><div class="skeleton skeleton-card mb-3" style="height:2.75rem;width:2.75rem;border-radius:0.75rem;"></div>';
+    html += '<div class="skeleton skeleton-text-lg" style="width:40%;"></div>';
+    html += '<div class="skeleton skeleton-text-sm" style="width:60%;"></div></div>';
   }
   html += '</div>';
   return html;
 }
 
-function renderSkeletonTable(rows) {
-  var html = '<div class="card overflow-hidden"><div class="hidden md:block overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs"><tr><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th><th class="px-4 py-3"><div class="skeleton skeleton-text-sm"></div></th></tr></thead><tbody>';
-  for (var i = 0; i < rows; i++) {
-    html += '<tr><td colspan="5" class="px-4 py-3"><div class="skeleton skeleton-row"></div></td></tr>';
+function skeletonTable(rows, cols) {
+  rows = rows || 5; cols = cols || 4;
+  var html = '<div class="card"><div class="card-body p-0">';
+  html += '<div class="p-4 border-b"><div class="skeleton skeleton-text" style="width:30%;"></div></div>';
+  html += '<div class="divide-y">';
+  for (var r = 0; r < rows; r++) {
+    html += '<div class="flex items-center gap-3 px-4 py-3">';
+    html += '<div class="skeleton skeleton-avatar" style="width:2rem;height:2rem;border-radius:0.5rem;flex-shrink:0;"></div>';
+    html += '<div class="flex-1 space-y-1.5">';
+    html += '<div class="skeleton skeleton-text" style="width:' + (50 + Math.floor(Math.random()*30)) + '%;"></div>';
+    html += '<div class="skeleton skeleton-text-sm" style="width:' + (30 + Math.floor(Math.random()*20)) + '%;"></div>';
+    html += '</div>';
+    html += '<div class="skeleton skeleton-text" style="width:4rem;"></div>';
+    html += '</div>';
   }
-  html += '</tbody></table></div></div>';
+  html += '</div></div></div>';
   return html;
 }
 
-function renderSkeletonKPI(count) {
-  var html = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
-  for (var i = 0; i < count; i++) {
-    html += '<div class="card p-4"><div class="flex items-center justify-between mb-3"><div class="w-11 h-11 skeleton rounded-xl"></div></div><div class="skeleton skeleton-text-lg"></div><div class="skeleton skeleton-text-sm"></div></div>';
-  }
-  html += '</div>';
-  return html;
+function skeletonDashboard() {
+  return '<div class="fade-in space-y-5">' +
+    skeletonKPICards() +
+    '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">' +
+    '<div class="card lg:col-span-2"><div class="card-body"><div class="skeleton" style="height:220px;border-radius:0.75rem;"></div></div></div>' +
+    '<div class="card"><div class="card-body"><div class="skeleton" style="height:220px;border-radius:0.75rem;"></div></div></div>' +
+    '</div>' +
+    '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">' +
+    skeletonTable(4) + skeletonTable(4) +
+    '</div></div>';
 }
 
-// ===== BACKGROUND LOADING TEST =====
-function testBackgroundLoader() {
-  console.log('[Test] Starting BackgroundLoader tests...');
-  
-  // Test 1: Cache functionality
-  console.log('[Test 1] Testing cache...');
-  BackgroundLoader.invalidateAll();
-  var cached = BackgroundLoader.get('items');
-  console.log('[Test 1] Cache before load:', cached === null ? 'PASS (null)' : 'FAIL');
-  
-  // Test 2: Preload functionality
-  console.log('[Test 2] Testing preload...');
-  if (!AUTH.token) {
-    console.log('[Test 2] SKIP - No auth token');
-  } else {
-    BackgroundLoader.preload('items', 'getItems', [AUTH.token])
-      .then(function(data) {
-        console.log('[Test 2] Preload success:', data && data.length > 0 ? 'PASS' : 'FAIL');
-        var cachedAfter = BackgroundLoader.get('items');
-        console.log('[Test 2] Cache after load:', cachedAfter && cachedAfter.length > 0 ? 'PASS' : 'FAIL');
-      })
-      .catch(function(err) {
-        console.log('[Test 2] Preload error:', err.message);
-      });
-  }
-  
-  // Test 3: Loading status
-  console.log('[Test 3] Testing loading status...');
-  BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).catch(function(){});
-  var isLoading = BackgroundLoader.isLoading('stock');
-  console.log('[Test 3] Loading status:', isLoading ? 'PASS' : 'FAIL');
-  
-  // Test 4: Cache invalidation
-  console.log('[Test 4] Testing cache invalidation...');
-  BackgroundLoader.invalidate('items');
-  var cachedAfterInvalid = BackgroundLoader.get('items');
-  console.log('[Test 4] Cache after invalidate:', cachedAfterInvalid === null ? 'PASS' : 'FAIL');
-  
-  // Test 5: Background indicator
-  console.log('[Test 5] Testing background indicator...');
-  console.log('[Test 5] Check bottom-right corner for loading indicator when preloading data');
-  
-  console.log('[Test] Tests completed. Check console for results.');
-  console.log('[Test] To manually test: Call BackgroundLoader.preloadMainData() after login');
+// ===== ERROR STATE HELPER =====
+function renderErrorState(message, retryFn) {
+  var retryBtn = retryFn
+    ? '<button onclick="(' + retryFn.toString() + ')()" class="btn-primary btn-sm mt-2"><i class="fi fi-rr-rotate-right mr-1"></i>ลองใหม่</button>'
+    : '';
+  return '<div class="error-state">' +
+    '<div class="error-state-icon"><i class="fi fi-rr-triangle-warning text-red-500 text-xl"></i></div>' +
+    '<p class="font-semibold text-gray-700 text-sm">โหลดข้อมูลไม่สำเร็จ</p>' +
+    '<p class="text-xs text-gray-400 max-w-xs">' + escHtml(message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง') + '</p>' +
+    retryBtn + '</div>';
 }
 
 // ===== ALERTS =====
@@ -331,7 +168,8 @@ function togglePass(inputId, btn) {
   var inp = document.getElementById(inputId);
   var isPass = inp.type === 'password';
   inp.type = isPass ? 'text' : 'password';
-  btn.querySelector('i').className = isPass ? 'fi fi-rr-eye-crossed text-sm' : 'fi fi-rr-eye text-sm';
+  var icon = btn.querySelector ? btn.querySelector('i') : btn;
+  if (icon) icon.className = isPass ? 'fi fi-rr-eye-crossed' : 'fi fi-rr-eye';
 }
 function getStockClass(stock, min) {
   if (stock <= 0) return 'stock-critical';
@@ -368,24 +206,55 @@ function renderPagination(containerId, total, currentPage, onPageClick) {
 // ===== LOGIN =====
 function setLoginRole(role) {
   document.getElementById('loginRole').value = role;
+  ['admin','staff','employee'].forEach(function(r) {
+    var tab = document.getElementById('tab' + r.charAt(0).toUpperCase() + r.slice(1));
+    if (!tab) return;
+    if (r === role) {
+      tab.className = 'role-tab flex-1 py-2 text-xs font-semibold rounded-lg transition-all bg-blue-600 text-white shadow';
+    } else {
+      tab.className = 'role-tab flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-gray-400 hover:text-gray-300';
+    }
+  });
+}
+
+function _setLoginError(msg) {
+  var box = document.getElementById('loginError');
+  var txt = document.getElementById('loginErrorText');
+  if (!box) return;
+  if (msg) {
+    if (txt) txt.textContent = msg;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
 }
 
 function doLogin() {
   var username = document.getElementById('loginUsername').value.trim();
   var password = document.getElementById('loginPassword').value;
-  var role     = document.getElementById('loginRole').value;
-  if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
+  _setLoginError(null);
+  if (!username || !password) { _setLoginError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
   var btn = document.getElementById('btnLogin');
-  btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
-  callAPI('login', username, password, role).then(function(res) {
-    btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ';
+  var btnText = document.getElementById('btnLoginText');
+  var btnIcon = document.getElementById('btnLoginIcon');
+  btn.disabled = true;
+  if (btnText) btnText.textContent = 'กำลังเข้าสู่ระบบ...';
+  if (btnIcon) btnIcon.className = 'w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin relative z-10';
+  callAPI('login', username, password).then(function(res) {
+    btn.disabled = false;
+    if (btnText) btnText.textContent = 'เข้าสู่ระบบ';
+    if (btnIcon) btnIcon.className = 'fi fi-rr-arrow-right text-xs relative z-10';
     if (res.success) {
       AUTH.set(res.token, res.user);
       initApp();
-    } else { showError(res.message); }
-  }).catch(function(err) {
-    btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ';
-    showError('ไม่สามารถเชื่อมต่อระบบได้');
+    } else {
+      _setLoginError(res.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    }
+  }).catch(function() {
+    btn.disabled = false;
+    if (btnText) btnText.textContent = 'เข้าสู่ระบบ';
+    if (btnIcon) btnIcon.className = 'fi fi-rr-arrow-right text-xs relative z-10';
+    _setLoginError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่');
   });
 }
 
@@ -421,10 +290,8 @@ function initApp() {
     localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
-    // Start background preloading after dashboard loads
-    setTimeout(function() {
-      BackgroundLoader.preloadMainData();
-    }, 500);
+    // เริ่ม background prefetch ทันทีหลัง login สำเร็จ
+    setTimeout(startBackgroundPrefetch, 500);
     // QR action จาก URL
     if (_QR_ACTION === 'withdraw' && _QR_ITEM_ID) {
       setTimeout(function() { openWithdrawFromQR(_QR_ITEM_ID); }, 800);
@@ -442,22 +309,58 @@ function initApp() {
   }).catch(function() { hideLoading(); showLoginPage(); });
 }
 
+// ===== BACKGROUND PREFETCH =====
+// โหลดข้อมูลหลักล่วงหน้าใน background เพื่อให้หน้าต่างๆ เปิดเร็วขึ้น
+var _prefetchDone = false;
+
+function startBackgroundPrefetch() {
+  if (_prefetchDone || !AUTH.token) return;
+  _prefetchDone = true;
+
+  var needItems = !_itemsData || _itemsData.length === 0;
+  var needUsers = AUTH.user && AUTH.user.role === 'admin' && (!_usersData || _usersData.length === 0);
+
+  if (!needItems && !needUsers) return;
+
+  // โหลด parallel ทันที
+  var promises = [];
+  if (needItems) {
+    promises.push(
+      callAPI('getItems', AUTH.token).then(function(res) {
+        if (res && res.data) { _itemsData = res.data; _itemsCacheTime = Date.now(); }
+      }).catch(function(){})
+    );
+  }
+  if (needUsers) {
+    promises.push(
+      callAPI('getUsers', AUTH.token).then(function(res) {
+        if (res && res.data) _usersData = res.data;
+      }).catch(function(){})
+    );
+  }
+
+  if (promises.length > 0) {
+    showBgLoading('โหลดข้อมูลล่วงหน้า...');
+    Promise.all(promises).then(function() {
+      hideBgLoading();
+      // อัปเดต badge หลัง prefetch
+      if (_itemsData.length > 0) updateLowStockBadge(_itemsData);
+    }).catch(function() { hideBgLoading(); });
+  }
+}
+
+function _bgPrefetchUsers() {
+  if (_usersData && _usersData.length > 0) return;
+  showBgLoading('โหลดข้อมูลผู้ใช้...');
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    hideBgLoading();
+    if (res && res.data) _usersData = res.data;
+  }).catch(function() { hideBgLoading(); });
+}
+
 function showLoginPage() {
   document.getElementById('loginPage').classList.remove('hidden');
   document.getElementById('mainShell').classList.add('hidden');
-  // Initialize particles animation
-  initLoginParticles();
-  // Load logo
-  callAPI('getConfig').then(function(res) {
-    if (res.success && res.data) {
-      var cfg = res.data;
-      if (cfg.app_name) {
-        document.getElementById('loginAppName').textContent = cfg.app_name;
-        document.getElementById('sidebarAppName').textContent = cfg.app_name;
-      }
-      updateLogoDisplay(cfg.app_logo);
-    }
-  }).catch(function() {});
 }
 
 function refreshPage() {
@@ -467,19 +370,17 @@ function refreshPage() {
     icon.style.transform = 'rotate(360deg)';
     setTimeout(function(){ icon.style.transform = ''; }, 650);
   }
-  // ล้าง cache ทั้งหมดเพื่อดึงข้อมูลจริงจาก server
+  // ล้าง cache ทั้งหมด
   _itemsData = []; _itemsCacheTime = 0;
   _stockData = [];
-  _receiveData = [];
-  _wdData = [];
-  _approveData = [];
-  _txData = [];
+  _receiveData = []; _receiveCacheTime = 0;
+  _wdData = []; _wdCacheTime = 0;
+  _approveData = []; _approveCacheTime = 0;
+  _txData = []; _txCacheTime = 0;
   _usersData = [];
   _assetData = [];
   _pageCache = {};
-  // Clear background loader cache
-  BackgroundLoader.invalidateAll();
-  // โหลดหน้าปัจจุบันใหม่
+  _prefetchDone = false;
   if (_currentPage) loadPage(_currentPage);
 }
 
@@ -551,7 +452,8 @@ function loadPage(page) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.add('hidden');
   var content = document.getElementById('mainContent');
-  content.innerHTML = '<div class="flex items-center justify-center py-16"><div class="w-8 h-8 border-4 border-navy-600 border-t-transparent rounded-full animate-spin"></div></div>';
+  // แต่ละ render function จัดการ skeleton เอง ไม่ต้องแสดง spinner ที่นี่
+  content.innerHTML = '';
   // render ทันที ไม่ต้องรอ setTimeout
   if (page === 'dashboard')    renderDashboard();
   else if (page === 'stock')        renderStock();
@@ -628,15 +530,21 @@ window.addEventListener('click', function(e) {
 var _charts = {};
 
 function renderDashboard() {
-  showLoading('โหลดข้อมูล Dashboard...');
+  // แสดง skeleton ทันที ไม่ต้องรอ API
+  document.getElementById('mainContent').innerHTML = skeletonDashboard();
+
+  showBgLoading('โหลด Dashboard...');
   Promise.all([
     callAPI('getDashboardStats', AUTH.token),
     callAPI('getWithdrawals', AUTH.token, { status:'approved' })
   ]).then(function(results) {
-    hideLoading();
+    hideBgLoading();
     var res = results[0];
     var wdRes = results[1];
-    if (!res.success) { showError(res.message); return; }
+    if (!res.success) {
+      document.getElementById('mainContent').innerHTML = renderErrorState(res.message, renderDashboard);
+      return;
+    }
     var d  = res;
     var kpi= res.kpi;
     var withdrawals = (wdRes.data || []).filter(function(w){ return w.status === 'approved'; });
@@ -843,7 +751,10 @@ function renderDashboard() {
       }
     }, 100);
 
-  }).catch(function(err) { hideLoading(); showError('โหลด Dashboard ไม่สำเร็จ'); });
+  }).catch(function(err) {
+    hideBgLoading();
+    document.getElementById('mainContent').innerHTML = renderErrorState('โหลด Dashboard ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ', renderDashboard);
+  });
 }
 
 function quickApprove(wdId, qty) {
@@ -851,8 +762,11 @@ function quickApprove(wdId, qty) {
     showLoading('กำลังอนุมัติ...');
     callAPI('approveWithdrawal', AUTH.token, wdId, qty).then(function(res) {
       hideLoading();
-      if (res.success) { showSuccess('อนุมัติสำเร็จ'); renderDashboard(); }
-      else showError(res.message);
+      if (res.success) {
+        // invalidate caches ที่เกี่ยวข้อง
+        _approveCacheTime = 0; _wdCacheTime = 0; _itemsCacheTime = 0; _txCacheTime = 0;
+        showSuccess('อนุมัติสำเร็จ'); renderDashboard();
+      } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
   }, 'อนุมัติ');
 }
@@ -868,8 +782,10 @@ function quickReject(wdId) {
     showLoading('กำลังดำเนินการ...');
     callAPI('rejectWithdrawal', AUTH.token, wdId, r.value).then(function(res) {
       hideLoading();
-      if (res.success) { showSuccess('ปฏิเสธคำขอแล้ว'); renderDashboard(); }
-      else showError(res.message);
+      if (res.success) {
+        _approveCacheTime = 0; _wdCacheTime = 0;
+        showSuccess('ปฏิเสธคำขอแล้ว'); renderDashboard();
+      } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
   });
 }
@@ -881,52 +797,63 @@ var _itemsFilter = { search:'', category:'all', stock:'all' };
 var _itemImageFileId = null;
 var _itemsCacheTime = 0;
 var _configLogoFileId = null;
-var ITEMS_CACHE_TTL = 3000; // 3 วินาที (cache สั้น ๆ เพื่อให้ข้อมูลตรง Sheet เสมอ)
+// Cache 5 นาที — ลด API calls ลงมาก เพราะ Google Apps Script มี latency สูง
+var ITEMS_CACHE_TTL = 5 * 60 * 1000;
+// Stale-while-revalidate: แสดงข้อมูลเก่าทันที แล้ว refresh ใน background
+var ITEMS_STALE_TTL = 30 * 60 * 1000;
 
-// Auto-clear cache เมื่อกลับมาที่ tab เว็บ (เผื่อเปลี่ยนข้อมูลจาก Google Sheets)
+// Reset cache เมื่อ tab กลับมา active แต่ให้ stale data แสดงก่อน
 document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    _itemsCacheTime = 0;
+  if (document.visibilityState === 'visible' && _itemsData.length > 0) {
+    var age = Date.now() - _itemsCacheTime;
+    // ถ้าข้อมูลเก่ากว่า 5 นาที ให้ refresh ใน background (ไม่บล็อก UI)
+    if (age > ITEMS_CACHE_TTL) {
+      _revalidateItemsInBackground();
+    }
   }
 });
 
+// Stale-while-revalidate: แสดงข้อมูลเก่าทันที แล้วโหลดใหม่ใน background
+function _revalidateItemsInBackground() {
+  if (!AUTH.token) return;
+  showBgLoading('อัปเดตข้อมูล...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideBgLoading();
+    if (res && res.data) {
+      _itemsData = res.data;
+      _itemsCacheTime = Date.now();
+      updateLowStockBadge(_itemsData);
+      // ถ้าอยู่หน้าที่ใช้ items อยู่ ให้ rebuild เงียบๆ
+      if (_currentPage === 'stock') buildStockPage();
+      else if (_currentPage === 'items') buildItemsPage();
+    }
+  }).catch(function() { hideBgLoading(); });
+}
+
 function renderItems() {
   if (AUTH.user.role !== 'admin') { loadPage('stock'); return; }
-  showLoading('โหลดรายการวัสดุ...');
-  
-  // Check BackgroundLoader cache first
-  var bgData = BackgroundLoader.get('items');
-  if (bgData && bgData.length > 0) {
-    _itemsData = bgData;
-    _itemsCacheTime = Date.now();
-    hideLoading();
-    updateLowStockBadge(_itemsData);
-    _itemsPage = 1;
-    buildItemsPage();
-    // Refresh in background
-    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
-    return;
-  }
-  
   // reuse cache ถ้ายังไม่หมดอายุ
   if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
-    hideLoading();
     updateLowStockBadge(_itemsData);
     _itemsPage = 1;
     buildItemsPage();
     return;
   }
-  
-  // Load from API
-  BackgroundLoader.preload('items', 'getItems', [AUTH.token]).then(function(data) {
-    hideLoading();
-    if (!data) { showError('โหลดข้อมูลไม่สำเร็จ'); return; }
-    _itemsData = data;
+  // แสดง skeleton ระหว่างโหลด
+  document.getElementById('mainContent').innerHTML = skeletonTable(8);
+  showBgLoading('โหลดรายการวัสดุ...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideBgLoading();
+    if (!res.success) {
+      document.getElementById('mainContent').innerHTML = renderErrorState(res.message, renderItems);
+      return;
+    }
+    _itemsData = res.data;
     _itemsCacheTime = Date.now();
     updateLowStockBadge(_itemsData);
     _itemsPage  = 1;
     buildItemsPage();
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดรายการวัสดุไม่สำเร็จ', renderItems); });
 }
 
 function buildItemsPage() {
@@ -1232,7 +1159,7 @@ function handleItemImageUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value=''; return; }
+  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 10MB'); input.value=''; return; }
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -1398,41 +1325,27 @@ function updateLowStockBadge(items) {
 }
 
 function renderStock() {
-  showLoading('โหลดสต็อก...');
-  
-  // Check BackgroundLoader cache first
-  var bgData = BackgroundLoader.get('stock');
-  if (bgData && bgData.length > 0) {
-    _itemsData = bgData;
-    _itemsCacheTime = Date.now();
-    _stockData = bgData;
-    hideLoading();
-    updateLowStockBadge(_itemsData);
-    buildStockPage();
-    // Refresh in background
-    BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).catch(function() {});
-    return;
-  }
-  
   // reuse cache ถ้ายังไม่หมดอายุ
   if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
-    hideLoading();
     _stockData = _itemsData;
     updateLowStockBadge(_itemsData);
     buildStockPage();
     return;
   }
-  
-  // Load from API
-  BackgroundLoader.preload('stock', 'getItems', [AUTH.token]).then(function(data) {
-    hideLoading();
-    if (!data) { showError('โหลดข้อมูลไม่สำเร็จ'); return; }
-    _itemsData = data;
+  document.getElementById('mainContent').innerHTML = skeletonTable(8);
+  showBgLoading('โหลดสต็อก...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideBgLoading();
+    if (!res.success) {
+      document.getElementById('mainContent').innerHTML = renderErrorState(res.message, renderStock);
+      return;
+    }
+    _itemsData = res.data;
     _itemsCacheTime = Date.now();
-    _stockData = data;
+    _stockData = res.data;
     updateLowStockBadge(_itemsData);
     buildStockPage();
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดสต็อกไม่สำเร็จ', renderStock); });
 }
 
 function buildStockPage() {
@@ -1526,33 +1439,30 @@ function filterStock() {
 
 // ===== RECEIVE =====
 var _receiveData = [];
+var _receiveCacheTime = 0;
 var _receivePage = 1;
 
 function renderReceive() {
-  showLoading('โหลดข้อมูลรับเข้า...');
-  
-  // Check BackgroundLoader cache for items
-  var bgItems = BackgroundLoader.get('items');
-  var bgReceives = BackgroundLoader.get('receives');
-  
-  var itemsPromise = (bgItems && bgItems.length > 0)
-    ? Promise.resolve({ success: true, data: bgItems })
-    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
-    
-  var receivesPromise = (bgReceives && bgReceives.length > 0)
-    ? Promise.resolve({ success: true, data: bgReceives })
-    : BackgroundLoader.preload('receives', 'getReceives', [AUTH.token, {}]);
-  
-  Promise.all([ itemsPromise, receivesPromise ]).then(function(results) {
-    hideLoading();
-    _itemsData = results[0].data || [];
-    _itemsCacheTime = Date.now();
+  var TTL = ITEMS_CACHE_TTL;
+  var itemsOk = _itemsData.length > 0 && (Date.now() - _itemsCacheTime) < TTL;
+  var receiveOk = _receiveData.length > 0 && (Date.now() - _receiveCacheTime) < TTL;
+  // ถ้ามี cache ทั้งคู่ แสดงทันที
+  if (itemsOk && receiveOk) { buildReceivePage(); return; }
+  document.getElementById('mainContent').innerHTML = skeletonTable(6);
+  showBgLoading('โหลดข้อมูลรับเข้า...');
+  var itemsPromise = itemsOk
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
+  var receivePromise = receiveOk
+    ? Promise.resolve({ data: _receiveData })
+    : callAPI('getReceives', AUTH.token, {}).then(function(res){ _receiveData = res.data||[]; _receiveCacheTime = Date.now(); return res; });
+  Promise.all([ itemsPromise, receivePromise ]).then(function(results) {
+    hideBgLoading();
+    _itemsData   = results[0].data || [];
     _receiveData = results[1].data || [];
     _receivePage = 1;
     buildReceivePage();
-    // Refresh in background
-    BackgroundLoader.preload('receives', 'getReceives', [AUTH.token, {}]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลรับเข้าไม่สำเร็จ', renderReceive); });
 }
 
 function buildReceivePage() {
@@ -1613,30 +1523,28 @@ function submitReceive() {
   showLoading('กำลังบันทึก...');
   callAPI('addReceive', AUTH.token, { item_id:itemId, quantity:qty, date:date, note:note }).then(function(res) {
     hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderReceive(); }
-    else showError(res.message);
+    if (res.success) {
+      _receiveCacheTime = 0; _itemsCacheTime = 0; _txCacheTime = 0;
+      showSuccess(res.message); renderReceive();
+    } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 
 // ===== STOCKTAKE =====
 function renderStocktake() {
-  showLoading('โหลดข้อมูล...');
-  
-  // Check BackgroundLoader cache for items
-  var bgItems = BackgroundLoader.get('items');
-  
-  var itemsPromise = (bgItems && bgItems.length > 0)
-    ? Promise.resolve({ success: true, data: bgItems })
-    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
-  
-  itemsPromise.then(function(res) {
-    hideLoading();
+  // ใช้ cache ถ้ามี
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    buildStocktakePage();
+    return;
+  }
+  document.getElementById('mainContent').innerHTML = skeletonTable(6);
+  showBgLoading('โหลดข้อมูลนับสต็อก...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideBgLoading();
     _itemsData = res.data || [];
     _itemsCacheTime = Date.now();
     buildStocktakePage();
-    // Refresh in background
-    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลไม่สำเร็จ', renderStocktake); });
 }
 
 function buildStocktakePage() {
@@ -1698,23 +1606,18 @@ function submitStocktake() {
 // ===== PRINT QR LABELS =====
 var _printQRFilter = { search:'', category:'all' };
 function renderPrintQRLabels() {
-  showLoading('โหลดข้อมูล...');
-  
-  // Check BackgroundLoader cache for items
-  var bgItems = BackgroundLoader.get('items');
-  
-  var itemsPromise = (bgItems && bgItems.length > 0)
-    ? Promise.resolve({ success: true, data: bgItems })
-    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
-  
-  itemsPromise.then(function(res) {
-    hideLoading();
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    buildPrintQRPage();
+    return;
+  }
+  document.getElementById('mainContent').innerHTML = skeletonTable(5);
+  showBgLoading('โหลดรายการ QR...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideBgLoading();
     _itemsData = res.data || [];
     _itemsCacheTime = Date.now();
     buildPrintQRPage();
-    // Refresh in background
-    BackgroundLoader.preload('items', 'getItems', [AUTH.token]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลไม่สำเร็จ', renderPrintQRLabels); });
 }
 
 function buildPrintQRPage() {
@@ -1817,34 +1720,30 @@ function printSelectedQRLabels() {
 
 // ===== WITHDRAW =====
 var _wdData   = [];
+var _wdCacheTime = 0;
 var _wdPage   = 1;
 var _wdFilter = 'all';
 
 function renderWithdraw() {
-  showLoading('โหลดข้อมูล...');
-  
-  // Check BackgroundLoader cache for items and withdrawals
-  var bgItems = BackgroundLoader.get('items');
-  var bgWithdrawals = BackgroundLoader.get('withdrawals');
-  
-  var itemsPromise = (bgItems && bgItems.length > 0)
-    ? Promise.resolve({ success: true, data: bgItems })
-    : BackgroundLoader.preload('items', 'getItems', [AUTH.token]);
-    
-  var withdrawalsPromise = (bgWithdrawals && bgWithdrawals.length > 0)
-    ? Promise.resolve({ success: true, data: bgWithdrawals })
-    : BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]);
-  
-  Promise.all([ itemsPromise, withdrawalsPromise ]).then(function(results) {
-    hideLoading();
+  var TTL = ITEMS_CACHE_TTL;
+  var itemsOk = _itemsData.length > 0 && (Date.now() - _itemsCacheTime) < TTL;
+  var wdOk = _wdData.length > 0 && (Date.now() - _wdCacheTime) < TTL;
+  if (itemsOk && wdOk) { _wdPage = 1; buildWithdrawPage(); return; }
+  document.getElementById('mainContent').innerHTML = skeletonTable(6);
+  showBgLoading('โหลดข้อมูลการเบิก...');
+  var itemsPromise = itemsOk
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res){ _itemsData = res.data||[]; _itemsCacheTime = Date.now(); return res; });
+  var wdPromise = wdOk
+    ? Promise.resolve({ data: _wdData })
+    : callAPI('getWithdrawals', AUTH.token, { status:'all' }).then(function(res){ _wdData = res.data||[]; _wdCacheTime = Date.now(); return res; });
+  Promise.all([ itemsPromise, wdPromise ]).then(function(results) {
+    hideBgLoading();
     _itemsData = results[0].data || [];
-    _itemsCacheTime = Date.now();
-    _wdData = results[1].data || [];
-    _wdPage = 1;
+    _wdData    = results[1].data || [];
+    _wdPage    = 1;
     buildWithdrawPage();
-    // Refresh in background
-    BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลการเบิกไม่สำเร็จ', renderWithdraw); });
 }
 
 function buildWithdrawPage() {
@@ -2125,27 +2024,24 @@ function submitWithdraw() {
 
 // ===== APPROVE =====
 var _approveData = [];
+var _approveCacheTime = 0;
 var _approvePage = 1;
 
 function renderApprove() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
-  showLoading('โหลดคำขอเบิก...');
-  
-  // Check BackgroundLoader cache for withdrawals
-  var bgWithdrawals = BackgroundLoader.get('withdrawals');
-  
-  var withdrawalsPromise = (bgWithdrawals && bgWithdrawals.length > 0)
-    ? Promise.resolve({ success: true, data: bgWithdrawals })
-    : BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]);
-  
-  withdrawalsPromise.then(function(res) {
-    hideLoading();
+  // ใช้ cache ถ้ามี
+  if (_approveData.length > 0 && (Date.now() - _approveCacheTime) < ITEMS_CACHE_TTL) {
+    _approvePage = 1; buildApprovePage('pending'); return;
+  }
+  document.getElementById('mainContent').innerHTML = skeletonTable(5);
+  showBgLoading('โหลดคำขอเบิก...');
+  callAPI('getWithdrawals', AUTH.token, { status:'all' }).then(function(res) {
+    hideBgLoading();
     _approveData = res.data || [];
+    _approveCacheTime = Date.now();
     _approvePage = 1;
     buildApprovePage('pending');
-    // Refresh in background
-    BackgroundLoader.preload('withdrawals', 'getWithdrawals', [AUTH.token, { status:'all' }]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดคำขอเบิกไม่สำเร็จ', renderApprove); });
 }
 
 function buildApprovePage(filterStatus) {
@@ -2233,8 +2129,10 @@ function doApprove(wdId) {
   showLoading('กำลังอนุมัติ...');
   callAPI('approveWithdrawal', AUTH.token, wdId, qty).then(function(res) {
     hideLoading();
-    if (res.success) { showSuccess(res.message); renderApprove(); }
-    else showError(res.message);
+    if (res.success) {
+      _approveCacheTime = 0; _wdCacheTime = 0; _itemsCacheTime = 0; _txCacheTime = 0;
+      showSuccess(res.message); renderApprove();
+    } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 
@@ -2255,8 +2153,10 @@ function doReject(wdId) {
   showLoading('กำลังดำเนินการ...');
   callAPI('rejectWithdrawal', AUTH.token, wdId, reason).then(function(res) {
     hideLoading();
-    if (res.success) { showSuccess(res.message); renderApprove(); }
-    else showError(res.message);
+    if (res.success) {
+      _approveCacheTime = 0; _wdCacheTime = 0;
+      showSuccess(res.message); renderApprove();
+    } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 
@@ -2265,35 +2165,34 @@ function doCancelWithdrawal(wdId) {
     showLoading('กำลังยกเลิก...');
     callAPI('cancelWithdrawal', AUTH.token, wdId).then(function(res) {
       hideLoading();
-      if (res.success) { showSuccess(res.message); renderWithdraw(); }
-      else showError(res.message);
+      if (res.success) {
+        _wdCacheTime = 0; _approveCacheTime = 0;
+        showSuccess(res.message); renderWithdraw();
+      } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
   });
 }
 
 // ===== TRANSACTIONS =====
 var _txData   = [];
+var _txCacheTime = 0;
 var _txPage   = 1;
 var _txFilter = { type:'all', date_from:'', date_to:'' };
 
 function renderTransactions() {
-  showLoading('โหลดประวัติ...');
-  
-  // Check BackgroundLoader cache for transactions
-  var bgTransactions = BackgroundLoader.get('transactions');
-  
-  var transactionsPromise = (bgTransactions && bgTransactions.length > 0)
-    ? Promise.resolve({ success: true, data: bgTransactions })
-    : BackgroundLoader.preload('transactions', 'getTransactions', [AUTH.token, {}]);
-  
-  transactionsPromise.then(function(res) {
-    hideLoading();
+  // ใช้ cache ถ้ามี
+  if (_txData.length > 0 && (Date.now() - _txCacheTime) < ITEMS_CACHE_TTL) {
+    _txPage = 1; buildTransactionsPage(); return;
+  }
+  document.getElementById('mainContent').innerHTML = skeletonTable(8);
+  showBgLoading('โหลดประวัติ...');
+  callAPI('getTransactions', AUTH.token, {}).then(function(res) {
+    hideBgLoading();
     _txData = res.data || [];
+    _txCacheTime = Date.now();
     _txPage = 1;
     buildTransactionsPage();
-    // Refresh in background
-    BackgroundLoader.preload('transactions', 'getTransactions', [AUTH.token, {}]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดประวัติไม่สำเร็จ', renderTransactions); });
 }
 
 function buildTransactionsPage() {
@@ -2645,15 +2544,16 @@ function exportLowStock() {
 
 // ===== PROFILE =====
 function renderProfile() {
-  showLoading('โหลดโปรไฟล์...');
+  // ใช้ข้อมูล AUTH.user ก่อน แล้ว refresh ใน background
+  buildProfilePage(AUTH.user);
+  showBgLoading('โหลดโปรไฟล์...');
   callAPI('getUsers', AUTH.token).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     var users = res.data || [];
     var user  = users.find(function(u){ return u.id === AUTH.user.id; }) || AUTH.user;
     buildProfilePage(user);
   }).catch(function() {
-    hideLoading();
-    buildProfilePage(AUTH.user);
+    hideBgLoading();
   });
 }
 
@@ -2749,7 +2649,7 @@ function doChangePassword() {
 function uploadAvatar(event) {
   var file = event.target.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2 MB'); return; }
+  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 10 MB'); return; }
   showLoading('กำลังอัปโหลดรูป...');
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -2773,23 +2673,20 @@ var _usersPage = 1;
 
 function renderUsers() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
-  showLoading('โหลดรายชื่อผู้ใช้...');
-  
-  // Check BackgroundLoader cache for users
-  var bgUsers = BackgroundLoader.get('users');
-  
-  var usersPromise = (bgUsers && bgUsers.length > 0)
-    ? Promise.resolve({ success: true, data: bgUsers })
-    : BackgroundLoader.preload('users', 'getUsers', [AUTH.token]);
-  
-  usersPromise.then(function(res) {
-    hideLoading();
+  // ใช้ cache ถ้ามี
+  if (_usersData && _usersData.length > 0) {
+    _usersPage = 1;
+    buildUsersPage();
+    return;
+  }
+  document.getElementById('mainContent').innerHTML = skeletonTable(5);
+  showBgLoading('โหลดรายชื่อผู้ใช้...');
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    hideBgLoading();
     _usersData = res.data || [];
     _usersPage = 1;
     buildUsersPage();
-    // Refresh in background
-    BackgroundLoader.preload('users', 'getUsers', [AUTH.token]).catch(function() {});
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดรายชื่อผู้ใช้ไม่สำเร็จ', renderUsers); });
 }
 
 function buildUsersPage() {
@@ -2925,12 +2822,16 @@ function doToggleUser(userId, name) {
 // ===== SETTINGS =====
 function renderSettings() {
   if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
-  showLoading('โหลดการตั้งค่า...');
+  document.getElementById('mainContent').innerHTML = '<div class="space-y-4">' + skeletonTable(3) + '</div>';
+  showBgLoading('โหลดการตั้งค่า...');
   callAPI('getConfig', AUTH.token).then(function(res) {
-    hideLoading();
-    if (!res.success) { showError(res.message); return; }
+    hideBgLoading();
+    if (!res.success) {
+      document.getElementById('mainContent').innerHTML = renderErrorState(res.message, renderSettings);
+      return;
+    }
     buildSettingsPage(res.data);
-  }).catch(function(){ hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function(){ hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดการตั้งค่าไม่สำเร็จ', renderSettings); });
 }
 
 function buildSettingsPage(cfg) {
@@ -2950,7 +2851,7 @@ function buildSettingsPage(cfg) {
   if (logoImgSrc) {
     html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><div class="flex items-center gap-3"><img id="cfgLogoPreview" src="' + logoImgSrc + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div><input type="hidden" id="cfgLogoFileId" value="' + (_configLogoFileId||'') + '"></div>';
   } else {
-    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 2MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
+    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 10MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
   }
   html += '</div></div>';
 
@@ -3012,30 +2913,24 @@ function updateLogoDisplay(fileId) {
   var sidebarIcon = document.getElementById('sidebarLogoIcon');
   var loginImg = document.getElementById('loginLogoImg');
   var loginIcon = document.getElementById('loginLogoIcon');
-  var loginImgMobile = document.getElementById('loginLogoImgMobile');
-  var loginIconMobile = document.getElementById('loginLogoIconMobile');
   var url = fileId ? imgUrl(fileId) : '';
   if (url) {
     if (sidebarImg) { sidebarImg.src = url; sidebarImg.classList.remove('hidden'); }
     if (sidebarIcon) sidebarIcon.classList.add('hidden');
     if (loginImg) { loginImg.src = url; loginImg.classList.remove('hidden'); }
     if (loginIcon) loginIcon.classList.add('hidden');
-    if (loginImgMobile) { loginImgMobile.src = url; loginImgMobile.classList.remove('hidden'); }
-    if (loginIconMobile) loginIconMobile.classList.add('hidden');
   } else {
     if (sidebarImg) sidebarImg.classList.add('hidden');
     if (sidebarIcon) sidebarIcon.classList.remove('hidden');
     if (loginImg) loginImg.classList.add('hidden');
     if (loginIcon) loginIcon.classList.remove('hidden');
-    if (loginImgMobile) loginImgMobile.classList.add('hidden');
-    if (loginIconMobile) loginIconMobile.classList.remove('hidden');
   }
 }
 function handleLogoUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2MB'); input.value=''; return; }
+  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 10MB'); input.value=''; return; }
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -3162,21 +3057,22 @@ function _loadAssetRefs(cb) {
 
 function renderAssets() {
   if (!AUTH.hasRole(['admin','staff'])) { loadPage('dashboard'); return; }
-  showLoading('โหลดทะเบียนครุภัณฑ์...');
+  document.getElementById('mainContent').innerHTML = skeletonTable(6);
+  showBgLoading('โหลดทะเบียนครุภัณฑ์...');
   Promise.all([
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetCategories', AUTH.token),
     callAPI('getAssetTypes', AUTH.token),
     callAPI('getAmphoes', AUTH.token)
   ]).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     _assetData = res[0].data || [];
     _assetCats = res[1].data || [];
     _assetTypes = res[2].data || [];
     _amphoes = res[3].data || [];
     _assetPage = 1;
     buildAssetsPage();
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดทะเบียนครุภัณฑ์ไม่สำเร็จ', renderAssets); });
 }
 
 function buildAssetsPage() {
@@ -3382,7 +3278,7 @@ function _loadAssetTypes() {
 function _uploadAssetImage(input) {
   var file = input.files[0];
   if (!file) return;
-  if (file.size > 2*1024*1024) { showError('ไฟล์ต้องไม่เกิน 2MB'); return; }
+  if (file.size > 10*1024*1024) { showError('ไฟล์ต้องไม่เกิน 10MB'); return; }
   showLoading('กำลังอัปโหลด...');
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -3469,16 +3365,17 @@ function printAssetQR(id) {
 
 function renderAssetStatus() {
   if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
-  showLoading('โหลดข้อมูล...');
+  document.getElementById('mainContent').innerHTML = skeletonTable(5);
+  showBgLoading('โหลดสถานภาพครุภัณฑ์...');
   Promise.all([
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetStatusLogs', AUTH.token)
   ]).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     _assetData = res[0].data || [];
     var logs = res[1].data || [];
     buildAssetStatusPage(logs);
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลไม่สำเร็จ', renderAssetStatus); });
 }
 
 function buildAssetStatusPage(logs) {
@@ -3556,16 +3453,17 @@ function submitChangeStatus(assetId) {
 
 function renderAssetMaintenance() {
   if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
-  showLoading('โหลดข้อมูล...');
+  document.getElementById('mainContent').innerHTML = skeletonTable(5);
+  showBgLoading('โหลดข้อมูลซ่อมบำรุง...');
   Promise.all([
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetMaintenance', AUTH.token)
   ]).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     _assetData = res[0].data || [];
     var records = res[1].data || [];
     buildAssetMaintenancePage(records);
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลซ่อมบำรุงไม่สำเร็จ', renderAssetMaintenance); });
 }
 
 function buildAssetMaintenancePage(records) {
@@ -3665,11 +3563,12 @@ function deleteMaintenanceConfirm(id) {
 
 function renderAssetCommittees() {
   if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
-  showLoading('โหลดข้อมูล...');
+  document.getElementById('mainContent').innerHTML = skeletonTable(4);
+  showBgLoading('โหลดข้อมูลคณะกรรมการ...');
   callAPI('getAssetCommittees', AUTH.token).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     buildAssetCommitteesPage(res.data || []);
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดข้อมูลคณะกรรมการไม่สำเร็จ', renderAssetCommittees); });
 }
 
 function buildAssetCommitteesPage(data) {
@@ -3769,18 +3668,19 @@ function deleteCommitteeConfirm(id) {
 
 function renderAssetReports() {
   if (AUTH.user.role === 'employee') { loadPage('dashboard'); return; }
-  showLoading('โหลดข้อมูล...');
+  document.getElementById('mainContent').innerHTML = skeletonTable(4);
+  showBgLoading('โหลดรายงานครุภัณฑ์...');
   Promise.all([
     callAPI('getAssets', AUTH.token),
     callAPI('getAssetCategories', AUTH.token),
     callAPI('getAmphoes', AUTH.token)
   ]).then(function(res) {
-    hideLoading();
+    hideBgLoading();
     var assets = res[0].data || [];
     var cats = res[1].data || [];
     var amphoes = res[2].data || [];
     buildAssetReportsPage(assets, cats, amphoes);
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  }).catch(function() { hideBgLoading(); document.getElementById('mainContent').innerHTML = renderErrorState('โหลดรายงานครุภัณฑ์ไม่สำเร็จ', renderAssetReports); });
 }
 
 function buildAssetReportsPage(assets, cats, amphoes) {
@@ -3869,25 +3769,60 @@ function buildAssetReportsPage(assets, cats, amphoes) {
 
 // ===== ON LOAD =====
 window.onload = function() {
+  // ตั้งปีใน login footer
+  var yearEl = document.getElementById('loginYear');
+  if (yearEl) yearEl.textContent = new Date().getFullYear() + 543;
+
+  // สร้าง particle animation สำหรับ login page
+  _initLoginParticles();
+
   // ดึง config ก่อนเพื่ออัปเดต logo และชื่อระบบ
   callAPI('getConfig').then(function(res) {
     if (res.success && res.data) {
       var cfg = res.data;
       if (cfg.app_name) {
-        document.getElementById('loginAppName').textContent = cfg.app_name;
-        document.getElementById('sidebarAppName').textContent = cfg.app_name;
+        var appNameEl = document.getElementById('loginAppName');
+        if (appNameEl) appNameEl.textContent = cfg.app_name;
+        var sidebarNameEl = document.getElementById('sidebarAppName');
+        if (sidebarNameEl) sidebarNameEl.textContent = cfg.app_name;
       }
       updateLogoDisplay(cfg.app_logo);
     }
   }).catch(function() {}).finally(function() {
     // Parse URL params for QR
     var urlParams = new URLSearchParams(window.location.search);
-    _QR_ACTION = urlParams.get('action') || '';
-    _QR_ITEM_ID = urlParams.get('item_id') || '';
-    _QR_ASSET_ID = urlParams.get('id') || '';
+    _QR_ACTION   = urlParams.get('action')  || '';
+    _QR_ITEM_ID  = urlParams.get('item_id') || '';
+    _QR_ASSET_ID = urlParams.get('id')      || '';
 
     if (AUTH.token) { initApp(); }
     else { showLoginPage(); }
   });
 };
+
+// ===== LOGIN PARTICLE ANIMATION =====
+function _initLoginParticles() {
+  var container = document.getElementById('login-particles');
+  if (!container) return;
+  var count = 18;
+  for (var i = 0; i < count; i++) {
+    (function(idx) {
+      var p = document.createElement('div');
+      p.className = 'login-v2-particle';
+      var size = 4 + Math.random() * 10;
+      var left = Math.random() * 100;
+      var duration = 12 + Math.random() * 20;
+      var delay = Math.random() * 15;
+      p.style.cssText = [
+        'width:' + size + 'px',
+        'height:' + size + 'px',
+        'left:' + left + '%',
+        'animation-duration:' + duration + 's',
+        'animation-delay:' + delay + 's',
+        'opacity:' + (0.1 + Math.random() * 0.3)
+      ].join(';');
+      container.appendChild(p);
+    })(i);
+  }
+}
 
