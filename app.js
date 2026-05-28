@@ -2848,11 +2848,13 @@ function buildSettingsPage(cfg) {
   // Logo upload
   _configLogoFileId = cfg.app_logo || null;
   var logoImgSrc = _configLogoFileId ? imgUrl(_configLogoFileId) : '';
+  html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label>';
   if (logoImgSrc) {
-    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><div class="flex items-center gap-3"><img id="cfgLogoPreview" src="' + logoImgSrc + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div><input type="hidden" id="cfgLogoFileId" value="' + (_configLogoFileId||'') + '"></div>';
-  } else {
-    html += '<div class="sm:col-span-2"><label class="form-label">โลโก้หน่วยงาน</label><input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 10MB)</p><div id="cfgLogoPreviewWrap"></div></div>';
+    html += '<div class="flex items-center gap-3 mb-2"><img id="cfgLogoPreview" src="' + logoImgSrc + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div>';
   }
+  html += '<input type="file" id="cfgLogoFile" accept="image/*" onchange="handleLogoUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 10MB)' + (logoImgSrc ? ' • เลือกไฟล์ใหม่เพื่อเปลี่ยนโลโก้' : '') + '</p>';
+  html += '<div id="cfgLogoPreviewWrap"></div>';
+  html += '<input type="hidden" id="cfgLogoFileId" value="' + (_configLogoFileId||'') + '"></div>';
   html += '</div></div>';
 
   html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-bell text-navy-600"></i> การแจ้งเตือน Telegram</h3></div>';
