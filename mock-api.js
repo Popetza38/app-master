@@ -177,7 +177,7 @@
     validateSession: function(token) {
       var u = _auth(token);
       if (!u) return null;
-      return { user_id:u.id, username:u.username, role:u.role, name:u.name };
+      return { user_id:u.id, username:u.username, role:u.role, name:u.name, avatar:u.avatar||'' };
     },
     forgotPassword: function(email) {
       return { success:true, message:'รหัสผ่านชั่วคราว: 123456 ( Mock )' };
