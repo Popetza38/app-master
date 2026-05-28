@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // app.js — Frontend (Static Site)
 // ============================================================
 
@@ -33,6 +33,86 @@ var AUTH = {
     return roles.indexOf(AUTH.user.role) !== -1;
   }
 };
+
+// ===== PAGE CACHE =====
+var PAGE_CACHE = {
+  enabled: true,
+  ttl: 10 * 60 * 1000, // 10 minutes
+  
+  get: function(page) {
+    if (!this.enabled) return null;
+    try {
+      var cached = localStorage.getItem('page_cache_' + page);
+      if (!cached) return null;
+      var data = JSON.parse(cached);
+      // Check if expired
+      if (Date.now() > data.expire) {
+        localStorage.removeItem('page_cache_' + page);
+        return null;
+      }
+      return data.html;
+    } catch(e) {
+      console.error('[PageCache] Get error:', e);
+      return null;
+    }
+  },
+  
+  set: function(page, html) {
+    if (!this.enabled) return;
+    try {
+      var data = {
+        html: html,
+        expire: Date.now() + this.ttl
+      };
+      localStorage.setItem('page_cache_' + page, JSON.stringify(data));
+      console.log('[PageCache] SAVED:', page);
+    } catch(e) {
+      console.error('[PageCache] Set error:', e);
+    }
+  },
+  
+  clear: function(page) {
+    if (!page) {
+      // Clear all page cache
+      Object.keys(localStorage).forEach(function(k) {
+        if (k.indexOf('page_cache_') === 0) {
+          localStorage.removeItem(k);
+        }
+      });
+    } else {
+      localStorage.removeItem('page_cache_' + page);
+    }
+  }
+};
+
+// ===== CACHE INVALIDATION HELPER =====
+function invalidateCache(pattern) {
+  // Clear API cache matching pattern
+  if (pattern) {
+    API_CACHE.clearPattern(pattern);
+  } else {
+    API_CACHE.clear();
+  }
+  // Clear all page cache
+  PAGE_CACHE.clear();
+  console.log('[Cache] INVALIDATED:', pattern || 'ALL');
+}
+
+// ===== RE-ATTACH PAGE EVENTS =====
+function reattachPageEvents(page) {
+  // Re-attach event listeners after loading from cache
+  // This is called when page is loaded from cache
+  switch(page) {
+    case 'dashboard':
+      // Re-attach dashboard events if any
+      break;
+    case 'stock':
+    case 'items':
+      // Re-attach table events, search, etc.
+      break;
+    // Add other pages as needed
+  }
+}
 
 // ===== LOADING (Overlay) =====
 function showLoading(text) {
@@ -577,7 +657,7 @@ function startDashboardWidgetAutoRefresh() {
   }, 45000);
 }
 
-function loadPage(page) {
+function loadPage(page, forceReload) {
   if (page !== 'dashboard') stopDashboardWidgetAutoRefresh();
   _currentPage = page;
   document.querySelectorAll('.menu-btn').forEach(function(btn) {
@@ -596,6 +676,22 @@ function loadPage(page) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.add('hidden');
   var content = document.getElementById('mainContent');
+
+  // Check page cache first (unless force reload)
+  if (!forceReload) {
+    var cachedHtml = PAGE_CACHE.get(page);
+    if (cachedHtml) {
+      console.log('[PageCache] HIT:', page);
+      content.innerHTML = cachedHtml;
+      // Re-attach event listeners if needed
+      reattachPageEvents(page);
+      // พรีโหลดข้อมูลของหน้าที่ผู้ใช้กำลังจะใช้งานต่อแบบเบื้องหลัง
+      prefetchForPage(page);
+      return;
+    }
+    console.log('[PageCache] MISS:', page);
+  }
+
   // แต่ละ render function จัดการ skeleton เอง ไม่ต้องแสดง spinner ที่นี่
   content.innerHTML = '';
   // render ทันที ไม่ต้องรอ setTimeout
@@ -970,6 +1066,11 @@ function quickApprove(wdId, qty) {
       if (res.success) {
         // invalidate caches ที่เกี่ยวข้อง
         _approveCacheTime = 0; _wdCacheTime = 0; _itemsCacheTime = 0; _txCacheTime = 0;
+        // Invalidate cache
+        invalidateCache('getPendingRequests');
+        invalidateCache('getItems');
+        invalidateCache('getStock');
+        invalidateCache('getTransactions');
         showSuccess('อนุมัติสำเร็จ'); renderDashboard();
       } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
@@ -989,6 +1090,9 @@ function quickReject(wdId) {
       hideLoading();
       if (res.success) {
         _approveCacheTime = 0; _wdCacheTime = 0;
+        // Invalidate cache
+        invalidateCache('getPendingRequests');
+        invalidateCache('getTransactions');
         showSuccess('ปฏิเสธคำขอแล้ว'); renderDashboard();
       } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
@@ -1150,6 +1254,11 @@ function buildItemsPage() {
   html += '</div>';
   document.getElementById('mainContent').innerHTML = html;
   renderPagination('itemsPagination', filtered.length, _itemsPage, function(p) { _itemsPage = p; buildItemsPage(); });
+  
+  // Cache the rendered page (only for first page without filters)
+  if (_itemsPage === 1 && !_itemsFilter.search && _itemsFilter.category === 'all' && _itemsFilter.stock === 'all') {
+    PAGE_CACHE.set('items', html);
+  }
 }
 
 function filterItems(data, f) {
@@ -1338,7 +1447,12 @@ function submitAddItem() {
   showLoading('กำลังบันทึก...');
   callAPI('addItem', AUTH.token, data).then(function(res) {
     hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderItems(); }
+    if (res.success) {
+      // Invalidate cache
+      invalidateCache('getItems');
+      invalidateCache('getStock');
+      showSuccess(res.message); renderItems();
+    }
     else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
@@ -1348,7 +1462,12 @@ function submitEditItem(id) {
   showLoading('กำลังบันทึก...');
   callAPI('updateItem', AUTH.token, id, data).then(function(res) {
     hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderItems(); }
+    if (res.success) {
+      // Invalidate cache
+      invalidateCache('getItems');
+      invalidateCache('getStock');
+      showSuccess(res.message); renderItems();
+    }
     else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
@@ -1436,6 +1555,8 @@ function deleteItemConfirm(id, name) {
       if (res.success) {
         showSuccess(res.message);
         _itemsData = _itemsData.filter(function(i) { return i.id !== id; });
+        // Invalidate cache
+        invalidateCache('getItems');
         buildItemsPage();
       } else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
@@ -1761,6 +1882,10 @@ function submitReceive() {
     hideLoading(); closeModal();
     if (res.success) {
       _receiveCacheTime = 0; _itemsCacheTime = 0; _txCacheTime = 0;
+      // Invalidate cache
+      invalidateCache('getItems');
+      invalidateCache('getStock');
+      invalidateCache('getTransactions');
       showSuccess(res.message); renderReceive();
     } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
@@ -2242,6 +2367,11 @@ function submitWithdraw() {
     hideLoading(); closeModal();
     if (res.success) {
       showSuccess('ยื่นคำขอ ' + res.withdraw_no + ' เรียบร้อย รอการอนุมัติ');
+      // Invalidate cache
+      invalidateCache('getItems');
+      invalidateCache('getStock');
+      invalidateCache('getTransactions');
+      invalidateCache('getPendingRequests');
       // อัปเดต local cache ทันที ไม่ต้องรอ refresh
       for (var i = 0; i < _itemsData.length; i++) {
         if (_itemsData[i].id === itemId) {
@@ -3181,6 +3311,8 @@ function saveSettings() {
     if (res.success) {
       document.getElementById('sidebarAppName').textContent = data.app_name || 'ระบบวัสดุสิ้นเปลือง';
       updateLogoDisplay(data.app_logo);
+      // Invalidate cache
+      invalidateCache('getSettings');
       showSuccess(res.message);
     } else showError(res.message);
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
