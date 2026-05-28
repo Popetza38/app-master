@@ -283,16 +283,13 @@ function submitForgotPassword() {
 // ===== APP INIT =====
 function initApp() {
   showLoading('กำลังตรวจสอบสิทธิ์...');
-  callAPI('validateSession', AUTH.token).then(function(session) {
-    hideLoading();
-    if (!session) { AUTH.clear(); showLoginPage(); return; }
+
+  function finishInitWithSession(session) {
     AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name, avatar: session.avatar||'' };
     localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
-    // เริ่ม background prefetch ทันทีหลัง login สำเร็จ
     setTimeout(startBackgroundPrefetch, 500);
-    // QR action จาก URL
     if (_QR_ACTION === 'withdraw' && _QR_ITEM_ID) {
       setTimeout(function() { openWithdrawFromQR(_QR_ITEM_ID); }, 800);
     }
@@ -306,7 +303,29 @@ function initApp() {
         });
       }, 800);
     }
-  }).catch(function() { hideLoading(); showLoginPage(); });
+  }
+
+  callAPI('validateSession', AUTH.token).then(function(session) {
+    if (session) { hideLoading(); finishInitWithSession(session); return; }
+
+    // กันกรณีเครือข่าย/Apps Script สะดุดครั้งเดียวตอน refresh
+    setTimeout(function() {
+      callAPI('validateSession', AUTH.token).then(function(session2) {
+        hideLoading();
+        if (session2) { finishInitWithSession(session2); return; }
+        AUTH.clear();
+        showLoginPage();
+      }).catch(function() {
+        hideLoading();
+        showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
+        showLoginPage();
+      });
+    }, 250);
+  }).catch(function() {
+    hideLoading();
+    showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+    showLoginPage();
+  });
 }
 
 // ===== BACKGROUND PREFETCH =====
@@ -490,8 +509,74 @@ function updateClock() {
 // ===== NAVIGATION =====
 var _currentPage = '';
 var _pageCache   = {};
+var _dashboardWidgetTimer = null;
+
+function stopDashboardWidgetAutoRefresh() {
+  if (_dashboardWidgetTimer) {
+    clearInterval(_dashboardWidgetTimer);
+    _dashboardWidgetTimer = null;
+  }
+}
+
+function startDashboardWidgetAutoRefresh() {
+  stopDashboardWidgetAutoRefresh();
+  if (_currentPage !== 'dashboard' || !AUTH || !AUTH.token) return;
+
+  _dashboardWidgetTimer = setInterval(function() {
+    if (_currentPage !== 'dashboard') { stopDashboardWidgetAutoRefresh(); return; }
+
+    // รีเฟรชเฉพาะ widget โดยไม่ rerender ทั้งหน้า
+    callAPI('getDashboardStats', AUTH.token).then(function(res) {
+      if (!res || !res.success || _currentPage !== 'dashboard') return;
+
+      var txHost = document.getElementById('dashRecentTx');
+      if (txHost) {
+        var tx = (res.recent_transactions || []).slice(0,6);
+        if (tx.length === 0) {
+          txHost.innerHTML = '<p class="text-center text-xs text-gray-400 py-6">ยังไม่มีรายการ</p>';
+        } else {
+          var txHtml = '';
+          tx.forEach(function(t) {
+            var isR = t.type === 'receive';
+            txHtml += '<div class="flex items-center gap-3 px-4 py-3">';
+            txHtml += '<div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ' + (isR ? 'bg-blue-100':'bg-purple-100') + '">';
+            txHtml += '<i class="fi ' + (isR?'fi-rr-inbox-in text-blue-600':'fi-rr-inbox-out text-purple-600') + ' text-sm"></i></div>';
+            txHtml += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(t.item_name) + '</p>';
+            txHtml += '<p class="text-xs text-gray-400">' + (isR?'+':'-') + t.quantity + ' ' + (t.unit||'') + ' • ' + (t.actor_name||'-') + '</p></div>';
+            txHtml += '<span class="text-xs text-gray-400 flex-shrink-0">' + formatDate(t.date) + '</span></div>';
+          });
+          txHost.innerHTML = txHtml;
+        }
+      }
+
+      var pHost = document.getElementById('dashRecentPending');
+      if (pHost) {
+        var pending = res.recent_pending || [];
+        if (pending.length === 0) {
+          pHost.innerHTML = '<p class="text-center text-xs text-gray-400 py-6">ไม่มีคำขอรออนุมัติ</p>';
+        } else {
+          var pHtml = '';
+          pending.forEach(function(w) {
+            pHtml += '<div class="flex items-center gap-3 px-4 py-3">';
+            pHtml += '<div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-time-forward text-amber-600 text-sm"></i></div>';
+            pHtml += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(w.item_name) + '</p>';
+            pHtml += '<p class="text-xs text-gray-400">' + w.quantity_requested + ' ' + w.unit + ' • ' + escHtml(w.requested_by_name) + '</p></div>';
+            if (AUTH.user.role === 'admin') {
+              pHtml += '<div class="flex gap-1 flex-shrink-0">';
+              pHtml += '<button onclick="quickApprove(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-check"></i></button>';
+              pHtml += '<button onclick="quickReject(\'' + w.id + '\')" class="btn-danger btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-cross"></i></button></div>';
+            }
+            pHtml += '</div>';
+          });
+          pHost.innerHTML = pHtml;
+        }
+      }
+    }).catch(function(){});
+  }, 45000);
+}
 
 function loadPage(page) {
+  if (page !== 'dashboard') stopDashboardWidgetAutoRefresh();
   _currentPage = page;
   document.querySelectorAll('.menu-btn').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-page') === page);
@@ -746,6 +831,9 @@ function renderDashboard() {
       });
       host.innerHTML = pHtml;
     })();
+
+    // เริ่ม auto-refresh เฉพาะ widget บน Dashboard
+    startDashboardWidgetAutoRefresh();
 
     setTimeout(function() {
       if (_charts.monthly) _charts.monthly.destroy();
