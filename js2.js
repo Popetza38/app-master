@@ -169,12 +169,16 @@ function openEditItemModal(id) {
 }
 function itemFormHTML(item) {
   var fid = _itemImageFileId || item.image_file_id || '';
-  var imgSection = '';
-  if (fid) {
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><div class="flex items-center gap-3"><img id="itemImgPreview" src="https://drive.google.com/thumbnail?id=' + fid + '&sz=w300-h300" class="w-24 h-24 object-cover rounded-xl border border-gray-200"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div><input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
+  var imgSrc = fid ? imgUrl(fid) : '';
+  var imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label>';
+  if (imgSrc) {
+    imgSection += '<div class="flex items-center gap-3 mb-2"><img id="itemImgPreview" src="' + imgSrc + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 bg-white"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div>';
   } else {
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
+    imgSection += '<div id="itemImgPreviewWrap" class="mb-2 hidden"><img id="itemImgPreview" src="" class="w-24 h-24 object-cover rounded-xl border border-gray-200 bg-white"></div>';
   }
+  imgSection += '<input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5">';
+  imgSection += '<p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)' + (imgSrc ? ' • เลือกไฟล์ใหม่เพื่อเปลี่ยนรูป' : '') + '</p>';
+  imgSection += '<input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
     + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name||'', 'sm:col-span-2')
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size||'')
@@ -228,7 +232,22 @@ function handleItemImageUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 10MB'); input.value=''; return; }
+  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value=''; return; }
+  // แสดง local preview ทันทีก่อน upload
+  var localReader = new FileReader();
+  localReader.onload = function(ev) {
+    var previewImg = document.getElementById('itemImgPreview');
+    var previewWrap = document.getElementById('itemImgPreviewWrap');
+    if (previewImg) {
+      previewImg.src = ev.target.result;
+    } else if (previewWrap) {
+      previewWrap.classList.remove('hidden');
+      var img = previewWrap.querySelector('img');
+      if (img) img.src = ev.target.result;
+    }
+  };
+  localReader.readAsDataURL(file);
+  // upload จริง
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -237,8 +256,11 @@ function handleItemImageUpload(input) {
       hideLoading();
       if (res.success) {
         _itemImageFileId = res.file_id;
-        var preview = document.getElementById('itemImagePreview');
-        if (preview) preview.innerHTML = '<img src="https://drive.google.com/thumbnail?id=' + res.file_id + '&sz=w300-h300" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+        var hiddenInput = document.getElementById('itemImageFileId');
+        if (hiddenInput) hiddenInput.value = res.file_id;
+        var previewImg = document.getElementById('itemImgPreview');
+        var imgSrc = imgUrl(res.file_id);
+        if (previewImg && imgSrc) previewImg.src = imgSrc;
         showSuccess('อัปโหลดรูปเรียบร้อย');
       } else {
         showError(res.message || 'อัปโหลดไม่สำเร็จ');
@@ -249,15 +271,18 @@ function handleItemImageUpload(input) {
 }
 function removeItemImage() {
   _itemImageFileId = null;
-  var name = (document.getElementById('itemName')||{}).value||'';
-  var size = (document.getElementById('itemSize')||{}).value||'';
-  var unit = (document.getElementById('itemUnit')||{}).value||'';
-  var cat  = (document.getElementById('itemCategory')||{}).value||'';
-  var stock = (document.getElementById('itemStock')||{}).value||0;
-  var min   = (document.getElementById('itemMinStock')||{}).value||5;
-  var fakeItem = {name:name, size:size, unit:unit, category:cat, current_stock:stock, min_stock:min, image_file_id:''};
-  var body = itemFormHTML(fakeItem);
-  document.getElementById('modalBody').innerHTML = body;
+  var hiddenInput = document.getElementById('itemImageFileId');
+  if (hiddenInput) hiddenInput.value = '';
+  var previewImg = document.getElementById('itemImgPreview');
+  if (previewImg) {
+    var wrap = previewImg.closest('.flex');
+    if (wrap) wrap.remove();
+    else previewImg.remove();
+  }
+  var previewWrap = document.getElementById('itemImgPreviewWrap');
+  if (previewWrap) previewWrap.classList.add('hidden');
+  var fileInput = document.getElementById('itemImageFile');
+  if (fileInput) fileInput.value = '';
 }
 
 function deleteItemConfirm(id, name) {
