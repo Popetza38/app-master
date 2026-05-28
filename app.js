@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // app.js — Frontend (Static Site)
 // ============================================================
 
@@ -283,21 +283,7 @@ function submitForgotPassword() {
 // ===== APP INIT =====
 function initApp(options) {
   var silent = options && options.silent;
-  var slowHintTimer = null;
-  if (!silent) {
-    showLoading('กำลังตรวจสอบสิทธิ์...');
-  } else {
-    slowHintTimer = setTimeout(function() {
-      if (_currentPage !== 'dashboard') return;
-      showBgLoading('กำลังกู้คืนเซสชัน...');
-    }, 2500);
-  }
-
-  function _doneInitLoading() {
-    if (slowHintTimer) { clearTimeout(slowHintTimer); slowHintTimer = null; }
-    if (!silent) hideLoading();
-    else hideBgLoading();
-  }
+  if (!silent) showLoading('กำลังตรวจสอบสิทธิ์...');
 
   function finishInitWithSession(session) {
     AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name, avatar: session.avatar||'' };
@@ -320,60 +306,26 @@ function initApp(options) {
     }
   }
 
-  function _withTimeout(promise, timeoutMs) {
-    return new Promise(function(resolve, reject) {
-      var done = false;
-      var t = setTimeout(function() {
-        if (done) return;
-        done = true;
-        reject(new Error('validate timeout'));
-      }, timeoutMs);
-      promise.then(function(v){ if (done) return; done = true; clearTimeout(t); resolve(v); })
-             .catch(function(e){ if (done) return; done = true; clearTimeout(t); reject(e); });
-    });
-  }
-
-  function _validateOnce() {
-    // GAS บางช่วงตอบช้า โดยเฉพาะหลัง refresh/โหลดพร้อมกันหลาย request
-    return _withTimeout(callAPI('validateSession', AUTH.token), 15000);
-  }
-
-  _validateOnce().then(function(session) {
-    if (session) { _doneInitLoading(); finishInitWithSession(session); return; }
+  callAPI('validateSession', AUTH.token).then(function(session) {
+    if (session) { if (!silent) hideLoading(); finishInitWithSession(session); return; }
 
     // กันกรณีเครือข่าย/Apps Script สะดุดครั้งเดียวตอน refresh
     setTimeout(function() {
-      _validateOnce().then(function(session2) {
-        _doneInitLoading();
+      callAPI('validateSession', AUTH.token).then(function(session2) {
+        if (!silent) hideLoading();
         if (session2) { finishInitWithSession(session2); return; }
         AUTH.clear();
         showLoginPage();
       }).catch(function() {
-        _doneInitLoading();
-        if (silent) showError('กู้คืนเซสชันไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่');
-        else showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
+        if (!silent) hideLoading();
+        showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
         showLoginPage();
       });
     }, 250);
   }).catch(function() {
-    _doneInitLoading();
-    if (silent) {
-      // อย่าเด้งกลับ login ทันที ให้ผู้ใช้ค้างหน้าแอปไว้และลองอีกครั้งอัตโนมัติ 1 รอบ
-      showError('การกู้คืนเซสชันล่าช้า กำลังลองใหม่...');
-      setTimeout(function() {
-        callAPI('validateSession', AUTH.token).then(function(session3) {
-          if (session3) { finishInitWithSession(session3); return; }
-          AUTH.clear();
-          showLoginPage();
-        }).catch(function() {
-          AUTH.clear();
-          showLoginPage();
-        });
-      }, 600);
-    } else {
-      showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
-      showLoginPage();
-    }
+    if (!silent) hideLoading();
+    showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+    showLoginPage();
   });
 }
 
@@ -574,7 +526,6 @@ function startDashboardWidgetAutoRefresh() {
 
   _dashboardWidgetTimer = setInterval(function() {
     if (_currentPage !== 'dashboard') { stopDashboardWidgetAutoRefresh(); return; }
-    if (document.visibilityState === 'hidden') return;
 
     // รีเฟรชเฉพาะ widget โดยไม่ rerender ทั้งหน้า
     callAPI('getDashboardStats', AUTH.token).then(function(res) {
@@ -1058,18 +1009,12 @@ var ITEMS_STALE_TTL = 30 * 60 * 1000;
 
 // Reset cache เมื่อ tab กลับมา active แต่ให้ stale data แสดงก่อน
 document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    if (_currentPage === 'dashboard') startDashboardWidgetAutoRefresh();
-    if (_itemsData.length > 0) {
-      var age = Date.now() - _itemsCacheTime;
-      // ถ้าข้อมูลเก่ากว่า 5 นาที ให้ refresh ใน background (ไม่บล็อก UI)
-      if (age > ITEMS_CACHE_TTL) {
-        _revalidateItemsInBackground();
-      }
+  if (document.visibilityState === 'visible' && _itemsData.length > 0) {
+    var age = Date.now() - _itemsCacheTime;
+    // ถ้าข้อมูลเก่ากว่า 5 นาที ให้ refresh ใน background (ไม่บล็อก UI)
+    if (age > ITEMS_CACHE_TTL) {
+      _revalidateItemsInBackground();
     }
-  } else {
-    // ลดงานเบื้องหลังเมื่อ tab ไม่ได้ใช้งาน
-    stopDashboardWidgetAutoRefresh();
   }
 });
 
