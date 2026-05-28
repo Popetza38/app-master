@@ -334,7 +334,8 @@ function initApp(options) {
   }
 
   function _validateOnce() {
-    return _withTimeout(callAPI('validateSession', AUTH.token), 8000);
+    // GAS บางช่วงตอบช้า โดยเฉพาะหลัง refresh/โหลดพร้อมกันหลาย request
+    return _withTimeout(callAPI('validateSession', AUTH.token), 15000);
   }
 
   _validateOnce().then(function(session) {
@@ -356,9 +357,23 @@ function initApp(options) {
     }, 250);
   }).catch(function() {
     _doneInitLoading();
-    if (silent) showError('กู้คืนเซสชันใช้เวลานานเกินไป กรุณาเข้าสู่ระบบใหม่');
-    else showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
-    showLoginPage();
+    if (silent) {
+      // อย่าเด้งกลับ login ทันที ให้ผู้ใช้ค้างหน้าแอปไว้และลองอีกครั้งอัตโนมัติ 1 รอบ
+      showError('การกู้คืนเซสชันล่าช้า กำลังลองใหม่...');
+      setTimeout(function() {
+        callAPI('validateSession', AUTH.token).then(function(session3) {
+          if (session3) { finishInitWithSession(session3); return; }
+          AUTH.clear();
+          showLoginPage();
+        }).catch(function() {
+          AUTH.clear();
+          showLoginPage();
+        });
+      }, 600);
+    } else {
+      showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+      showLoginPage();
+    }
   });
 }
 
