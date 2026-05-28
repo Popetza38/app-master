@@ -590,24 +590,17 @@ window.addEventListener('click', function(e) {
 var _charts = {};
 
 function renderDashboard() {
-  // แสดง skeleton ทันที ไม่ต้องรอ API
+  // แสดง UI Dashboard ทันที แล้วค่อยเติมข้อมูลทีหลัง
   document.getElementById('mainContent').innerHTML = skeletonDashboard();
 
-  showBgLoading('โหลด Dashboard...');
-  Promise.all([
-    callAPI('getDashboardStats', AUTH.token),
-    callAPI('getWithdrawals', AUTH.token, { status:'approved' })
-  ]).then(function(results) {
-    hideBgLoading();
-    var res = results[0];
-    var wdRes = results[1];
+  // ไม่บล็อกหน้าด้วย overlay เพื่อให้ผู้ใช้เห็น UI ได้ทันที
+  callAPI('getDashboardStats', AUTH.token).then(function(res) {
     if (!res.success) {
       document.getElementById('mainContent').innerHTML = renderErrorState(res.message, renderDashboard);
       return;
     }
     var d  = res;
     var kpi= res.kpi;
-    var withdrawals = (wdRes.data || []).filter(function(w){ return w.status === 'approved'; });
 
     var badge = document.getElementById('pendingBadge');
     if (kpi.pending > 0) { badge.textContent = kpi.pending; badge.classList.remove('hidden'); }
@@ -787,10 +780,52 @@ function renderDashboard() {
           options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{font:{family:'Sarabun',size:11}},grid:{color:'#f3f4f6'}},x:{ticks:{font:{family:'Sarabun',size:11}},grid:{display:false}}} }
         });
       }
-      // Category withdrawal bar chart
+      // Category withdrawal bar chart (โหลดแบบ background แยกต่างหาก)
       if (_charts.wdCat) _charts.wdCat.destroy();
       var ctxW = document.getElementById('chartWdCat');
-      if (ctxW && withdrawals.length > 0) {
+      if (ctxW) {
+        ctxW.parentNode.innerHTML = '<div class="flex items-center justify-center h-full text-sm text-gray-400">กำลังโหลดข้อมูลการเบิก...</div>';
+      }
+    }, 100);
+
+    // โหลดข้อมูลการเบิกแยก เพื่อให้ KPI/การ์ด/กราฟหลักขึ้นก่อน
+    // 1) ใช้ cache ที่มีอยู่ก่อน (ถ้ามี) ให้เห็นกราฟเร็วสุด
+    if (_wdData && _wdData.length > 0) {
+      var cachedWd = _wdData.filter(function(w){ return w.status === 'approved'; });
+      var cachedHost = document.getElementById('chartWdCat');
+      if (cachedHost && cachedWd.length > 0) {
+        var cachedTotals = {};
+        cachedWd.forEach(function(w){
+          var item = _itemsData.find(function(i){ return i.id === w.item_id; });
+          var cat = item ? (item.category || 'ไม่ระบุหมวด') : 'ไม่ระบุหมวด';
+          cachedTotals[cat] = (cachedTotals[cat] || 0) + (w.quantity || 0);
+        });
+        var cachedKeys = Object.keys(cachedTotals).sort(function(a,b){ return cachedTotals[b] - cachedTotals[a]; }).slice(0,6);
+        var cachedVals = cachedKeys.map(function(k){ return cachedTotals[k]; });
+        var cachedColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4'];
+        _charts.wdCat = new Chart(cachedHost, {
+          type:'bar',
+          data:{ labels:cachedKeys, datasets:[{ label:'จำนวนเบิก', data:cachedVals, backgroundColor:cachedColors.slice(0,cachedKeys.length), borderRadius:6, barPercentage:0.6 }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{font:{family:'Sarabun',size:11}},grid:{color:'#f3f4f6'}},x:{ticks:{font:{family:'Sarabun',size:10}},grid:{display:false}}} }
+        });
+      }
+    }
+
+    // 2) ดึงข้อมูลล่าสุดมา refresh กราฟแบบเบื้องหลัง
+    callAPI('getWithdrawals', AUTH.token, { status:'approved' }).then(function(wdRes) {
+      _wdData = (wdRes && wdRes.data) ? wdRes.data : (_wdData || []);
+      _wdCacheTime = Date.now();
+      var withdrawals = (_wdData || []).filter(function(w){ return w.status === 'approved'; });
+      var wrap = document.querySelector('#chartWdCat') ? document.querySelector('#chartWdCat').parentNode : document.querySelector('.card-body div[style*="height:220px"]');
+      var chartHost = document.getElementById('chartWdCat');
+      if (!chartHost && wrap) {
+        wrap.innerHTML = '<canvas id="chartWdCat"></canvas>';
+        chartHost = document.getElementById('chartWdCat');
+      }
+      if (!chartHost) return;
+
+      if (_charts.wdCat) _charts.wdCat.destroy();
+      if (withdrawals.length > 0) {
         var catTotals = {};
         withdrawals.forEach(function(w){
           var item = _itemsData.find(function(i){ return i.id === w.item_id; });
@@ -800,19 +835,22 @@ function renderDashboard() {
         var catKeys = Object.keys(catTotals).sort(function(a,b){ return catTotals[b] - catTotals[a]; }).slice(0,6);
         var catVals = catKeys.map(function(k){ return catTotals[k]; });
         var barColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4'];
-        _charts.wdCat = new Chart(ctxW, {
+        _charts.wdCat = new Chart(chartHost, {
           type:'bar',
           data:{ labels:catKeys, datasets:[{ label:'จำนวนเบิก', data:catVals, backgroundColor:barColors.slice(0,catKeys.length), borderRadius:6, barPercentage:0.6 }] },
           options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(c){ return c.raw + ' รายการ'; }}}}, scales:{y:{ticks:{font:{family:'Sarabun',size:11}},grid:{color:'#f3f4f6'}},x:{ticks:{font:{family:'Sarabun',size:10}},grid:{display:false}}} }
         });
-      } else if (ctxW) {
-        // ถ้าไม่มีข้อมูลการเบิก แสดงข้อความ
-        ctxW.parentNode.innerHTML = '<div class="flex items-center justify-center h-full text-sm text-gray-400">ยังไม่มีข้อมูลการเบิก</div>';
+      } else {
+        chartHost.parentNode.innerHTML = '<div class="flex items-center justify-center h-full text-sm text-gray-400">ยังไม่มีข้อมูลการเบิก</div>';
       }
-    }, 100);
+    }).catch(function() {
+      var chartHost = document.getElementById('chartWdCat');
+      if (chartHost && chartHost.parentNode) {
+        chartHost.parentNode.innerHTML = '<div class="flex items-center justify-center h-full text-sm text-gray-400">โหลดข้อมูลการเบิกไม่สำเร็จ</div>';
+      }
+    });
 
   }).catch(function(err) {
-    hideBgLoading();
     document.getElementById('mainContent').innerHTML = renderErrorState('โหลด Dashboard ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ', renderDashboard);
   });
 }
