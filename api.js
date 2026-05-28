@@ -2,7 +2,7 @@
 // API Client — Auto-routes to Mock (offline) or Google Apps Script (online)
 // ============================================================
 
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9oYPzKsOr1wJIpL_jYUjre7BQz58dflc6W7Q-WhKSXMYxjLX2lqOi-eR2ot-cQgiHow/exec';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxehoF9YRI2_pPmE9htNfBVqC6AW71HaPrcCUN_P6522A4nfo3eKKvOumRgP_9Z7OF0Aw/exec';
 
 // ── Mock mode ──────────────────────────────────────────────
 // เปลี่ยนเป็น true เพื่อใช้ mock-api (ไม่ต้องมี internet / GAS)
