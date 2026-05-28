@@ -455,11 +455,12 @@ document.addEventListener('click', function(e) {
 function showMainShell() {
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('mainShell').classList.remove('hidden');
-  document.getElementById('sidebarName').textContent = AUTH.user.name || AUTH.user.username;
-  document.getElementById('sidebarRole').textContent = ROLE_LABELS[AUTH.user.role] || AUTH.user.role;
-  var isAdmin  = AUTH.user.role === 'admin';
-  var isStaff  = AUTH.user.role === 'staff';
-  var notEmp   = AUTH.user.role !== 'employee';
+  var currentUser = AUTH.user || { name:'', username:'', role:'employee', avatar:'' };
+  document.getElementById('sidebarName').textContent = currentUser.name || currentUser.username || 'กำลังเข้าสู่ระบบ...';
+  document.getElementById('sidebarRole').textContent = ROLE_LABELS[currentUser.role] || currentUser.role || '';
+  var isAdmin  = currentUser.role === 'admin';
+  var isStaff  = currentUser.role === 'staff';
+  var notEmp   = currentUser.role !== 'employee';
   document.getElementById('menuItems').style.display    = isAdmin ? '' : 'none';
   document.getElementById('menuReceive').style.display  = notEmp  ? '' : 'none';
   document.getElementById('menuStocktake').style.display = notEmp ? '' : 'none';
@@ -4068,7 +4069,22 @@ window.onload = function() {
   // สร้าง particle animation สำหรับ login page
   _initLoginParticles();
 
-  // ดึง config ก่อนเพื่ออัปเดต logo และชื่อระบบ
+  // Parse URL params for QR
+  var urlParams = new URLSearchParams(window.location.search);
+  _QR_ACTION   = urlParams.get('action')  || '';
+  _QR_ITEM_ID  = urlParams.get('item_id') || '';
+  _QR_ASSET_ID = urlParams.get('id')      || '';
+
+  // แสดงผลตามสถานะ session ทันที ไม่รอ getConfig
+  if (AUTH.token) {
+    showMainShell();
+    document.getElementById('mainContent').innerHTML = skeletonDashboard();
+    initApp();
+  } else {
+    showLoginPage();
+  }
+
+  // ดึง config แบบ background เพื่ออัปเดตชื่อ/โลโก้
   callAPI('getConfig').then(function(res) {
     if (res.success && res.data) {
       var cfg = res.data;
@@ -4080,22 +4096,7 @@ window.onload = function() {
       }
       updateLogoDisplay(cfg.app_logo);
     }
-  }).catch(function() {}).finally(function() {
-    // Parse URL params for QR
-    var urlParams = new URLSearchParams(window.location.search);
-    _QR_ACTION   = urlParams.get('action')  || '';
-    _QR_ITEM_ID  = urlParams.get('item_id') || '';
-    _QR_ASSET_ID = urlParams.get('id')      || '';
-
-    // ถ้ามี token ให้แสดง main shell ทันที ลดอาการเห็นหน้า login ค้างตอนรีเฟรช
-    if (AUTH.token) {
-      showMainShell();
-      document.getElementById('mainContent').innerHTML = skeletonDashboard();
-      initApp();
-    } else {
-      showLoginPage();
-    }
-  });
+  }).catch(function() {});
 };
 
 // ===== LOGIN PARTICLE ANIMATION =====
