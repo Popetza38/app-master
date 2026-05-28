@@ -281,8 +281,22 @@ function submitForgotPassword() {
 }
 
 // ===== APP INIT =====
-function initApp() {
-  showLoading('กำลังตรวจสอบสิทธิ์...');
+function initApp(options) {
+  var silent = options && options.silent;
+  if (!silent) showLoading('กำลังตรวจสอบสิทธิ์...');
+  var slowHintTimer = null;
+  if (silent) {
+    slowHintTimer = setTimeout(function() {
+      if (_currentPage !== 'dashboard') return;
+      showBgLoading('กำลังกู้คืนเซสชัน...');
+    }, 2500);
+  }
+
+  function _doneInitLoading() {
+    if (slowHintTimer) { clearTimeout(slowHintTimer); slowHintTimer = null; }
+    if (!silent) hideLoading();
+    else hideBgLoading();
+  }
 
   function finishInitWithSession(session) {
     AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name, avatar: session.avatar||'' };
@@ -306,23 +320,23 @@ function initApp() {
   }
 
   callAPI('validateSession', AUTH.token).then(function(session) {
-    if (session) { hideLoading(); finishInitWithSession(session); return; }
+    if (session) { _doneInitLoading(); finishInitWithSession(session); return; }
 
     // กันกรณีเครือข่าย/Apps Script สะดุดครั้งเดียวตอน refresh
     setTimeout(function() {
       callAPI('validateSession', AUTH.token).then(function(session2) {
-        hideLoading();
+        _doneInitLoading();
         if (session2) { finishInitWithSession(session2); return; }
         AUTH.clear();
         showLoginPage();
       }).catch(function() {
-        hideLoading();
+        _doneInitLoading();
         showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
         showLoginPage();
       });
     }, 250);
   }).catch(function() {
-    hideLoading();
+    _doneInitLoading();
     showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
     showLoginPage();
   });
@@ -4079,7 +4093,7 @@ window.onload = function() {
   if (AUTH.token) {
     showMainShell();
     document.getElementById('mainContent').innerHTML = skeletonDashboard();
-    initApp();
+    initApp({ silent:true });
   } else {
     showLoginPage();
   }
