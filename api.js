@@ -7,7 +7,7 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9oYPzKsOr1wJIpL
 // ── Mock mode ──────────────────────────────────────────────
 // เปลี่ยนเป็น true เพื่อใช้ mock-api (ไม่ต้องมี internet / GAS)
 // เปลี่ยนเป็น false เพื่อใช้ Google Apps Script จริง
-var USE_MOCK = true;
+var USE_MOCK = false;
 
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
