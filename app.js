@@ -976,7 +976,8 @@ function applyItemFilter() {
 }
 
 function downloadCSVSample() {
-  var csv = 'รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  var csv = '\uFEFF'; // BOM สำหรับ UTF-8 ให้ Excel อ่านภาษาไทยได้ถูกต้อง
+  csv += 'รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
   csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size S,กล่อง,อุปกรณ์ป้องกัน,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
   csv += 'SUP-002,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size M,กล่อง,อุปกรณ์ป้องกัน,15,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
   csv += 'SUP-003,สำลี,200 g.,ถุง,วัสถุดิบทางการแพทย์,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
@@ -1099,13 +1100,17 @@ function openEditItemModal(id) {
 }
 function itemFormHTML(item) {
   var fid = _itemImageFileId || item.image_file_id || '';
-  var imgSection = '';
-  if (fid) {
-    var imgSrc = imgUrl(fid);
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><div class="flex items-center gap-3"><img id="itemImgPreview" src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div><input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
+  var imgSrc = fid ? imgUrl(fid) : '';
+  var imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label>';
+  // แสดง preview รูปปัจจุบัน (ถ้ามี)
+  if (imgSrc) {
+    imgSection += '<div class="flex items-center gap-3 mb-2"><img id="itemImgPreview" src="' + imgSrc + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 bg-white"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div>';
   } else {
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
+    imgSection += '<div id="itemImgPreviewWrap" class="mb-2 hidden"><img id="itemImgPreview" src="" class="w-24 h-24 object-cover rounded-xl border border-gray-200 bg-white"></div>';
   }
+  imgSection += '<input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5">';
+  imgSection += '<p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)' + (imgSrc ? ' • เลือกไฟล์ใหม่เพื่อเปลี่ยนรูป' : '') + '</p>';
+  imgSection += '<input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
     + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name||'', 'sm:col-span-2')
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size||'')
@@ -1159,7 +1164,22 @@ function handleItemImageUpload(input) {
   var file = input.files[0];
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
-  if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 10MB'); input.value=''; return; }
+  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value=''; return; }
+  // แสดง local preview ทันทีก่อน upload
+  var localReader = new FileReader();
+  localReader.onload = function(ev) {
+    var previewImg = document.getElementById('itemImgPreview');
+    var previewWrap = document.getElementById('itemImgPreviewWrap');
+    if (previewImg) {
+      previewImg.src = ev.target.result;
+    } else if (previewWrap) {
+      previewWrap.classList.remove('hidden');
+      var img = previewWrap.querySelector('img');
+      if (img) img.src = ev.target.result;
+    }
+  };
+  localReader.readAsDataURL(file);
+  // upload จริง
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -1168,9 +1188,13 @@ function handleItemImageUpload(input) {
       hideLoading();
       if (res.success) {
         _itemImageFileId = res.file_id;
-        var preview = document.getElementById('itemImagePreview');
+        // อัปเดต hidden input ให้ตรงกับ file_id จริง
+        var hiddenInput = document.getElementById('itemImageFileId');
+        if (hiddenInput) hiddenInput.value = res.file_id;
+        // อัปเดต preview ให้ใช้ URL จาก server
+        var previewImg = document.getElementById('itemImgPreview');
         var imgSrc = imgUrl(res.file_id);
-        if (preview) preview.innerHTML = '<img src="' + (imgSrc||'') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+        if (previewImg && imgSrc) previewImg.src = imgSrc;
         showSuccess('อัปโหลดรูปเรียบร้อย');
       } else {
         showError(res.message || 'อัปโหลดไม่สำเร็จ');
@@ -1181,15 +1205,22 @@ function handleItemImageUpload(input) {
 }
 function removeItemImage() {
   _itemImageFileId = null;
-  var name = (document.getElementById('itemName')||{}).value||'';
-  var size = (document.getElementById('itemSize')||{}).value||'';
-  var unit = (document.getElementById('itemUnit')||{}).value||'';
-  var cat  = (document.getElementById('itemCategory')||{}).value||'';
-  var stock = (document.getElementById('itemStock')||{}).value||0;
-  var min   = (document.getElementById('itemMinStock')||{}).value||5;
-  var fakeItem = {name:name, size:size, unit:unit, category:cat, current_stock:stock, min_stock:min, image_file_id:''};
-  var body = itemFormHTML(fakeItem);
-  document.getElementById('modalBody').innerHTML = body;
+  // ล้าง hidden input
+  var hiddenInput = document.getElementById('itemImageFileId');
+  if (hiddenInput) hiddenInput.value = '';
+  // ซ่อน preview รูปปัจจุบัน (กรณีแก้ไข)
+  var previewImg = document.getElementById('itemImgPreview');
+  if (previewImg) {
+    var wrap = previewImg.closest('.flex');
+    if (wrap) wrap.remove();
+    else previewImg.remove();
+  }
+  // ซ่อน preview wrap (กรณีเพิ่งเลือกไฟล์)
+  var previewWrap = document.getElementById('itemImgPreviewWrap');
+  if (previewWrap) previewWrap.classList.add('hidden');
+  // ล้าง file input
+  var fileInput = document.getElementById('itemImageFile');
+  if (fileInput) fileInput.value = '';
 }
 
 function deleteItemConfirm(id, name) {
@@ -2933,6 +2964,18 @@ function handleLogoUpload(input) {
   if (!file) return;
   if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value=''; return; }
   if (file.size > 10 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 10MB'); input.value=''; return; }
+  // แสดง local preview ทันทีก่อน upload
+  var localReader = new FileReader();
+  localReader.onload = function(ev) {
+    var wrap = document.getElementById('cfgLogoPreviewWrap');
+    if (wrap) {
+      wrap.innerHTML = '<div class="flex items-center gap-3 mt-2">'
+        + '<img src="' + ev.target.result + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1">'
+        + '<span class="text-xs text-gray-400">กำลังอัปโหลด...</span></div>';
+    }
+  };
+  localReader.readAsDataURL(file);
+  // upload จริง
   var reader = new FileReader();
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
@@ -2943,7 +2986,12 @@ function handleLogoUpload(input) {
         _configLogoFileId = res.file_id;
         var wrap = document.getElementById('cfgLogoPreviewWrap');
         var url = imgUrl(res.file_id);
-        if (wrap) wrap.innerHTML = '<div class="flex items-center gap-3 mt-2"><img src="' + url + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><button onclick="removeLogo()" type="button" class="text-red-500 text-sm hover:underline">ลบโลโก้</button></div><input type="hidden" id="cfgLogoFileId" value="' + res.file_id + '">';
+        if (wrap) wrap.innerHTML = '<div class="flex items-center gap-3 mt-2"><img src="' + url + '" class="w-20 h-20 object-contain rounded-xl border border-gray-200 bg-white p-1"><span class="text-xs text-green-600 font-medium">อัปโหลดสำเร็จ</span></div>';
+        var hiddenInput = document.getElementById('cfgLogoFileId');
+        if (hiddenInput) hiddenInput.value = res.file_id;
+        // อัปเดต preview โลโก้ที่มีอยู่แล้ว (กรณีเปลี่ยนโลโก้)
+        var existingPreview = document.getElementById('cfgLogoPreview');
+        if (existingPreview) existingPreview.src = url;
       } else showError(res.message);
     }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
   };
