@@ -4087,8 +4087,14 @@ window.onload = function() {
     _QR_ITEM_ID  = urlParams.get('item_id') || '';
     _QR_ASSET_ID = urlParams.get('id')      || '';
 
-    if (AUTH.token) { initApp(); }
-    else { showLoginPage(); }
+    // ถ้ามี token ให้แสดง main shell ทันที ลดอาการเห็นหน้า login ค้างตอนรีเฟรช
+    if (AUTH.token) {
+      showMainShell();
+      document.getElementById('mainContent').innerHTML = skeletonDashboard();
+      initApp();
+    } else {
+      showLoginPage();
+    }
   });
 };
 
