@@ -312,41 +312,72 @@ function initApp() {
 // ===== BACKGROUND PREFETCH =====
 // โหลดข้อมูลหลักล่วงหน้าใน background เพื่อให้หน้าต่างๆ เปิดเร็วขึ้น
 var _prefetchDone = false;
+var _prefetchFlags = {
+  items:false, users:false, receive:false, withdrawals:false, transactions:false,
+  assets:false, assetStatusLogs:false, assetMaintenance:false, assetCommittees:false
+};
+
+function _prefetchOnce(key, text, fn) {
+  if (_prefetchFlags[key] || !AUTH.token) return Promise.resolve();
+  _prefetchFlags[key] = true;
+  showBgLoading(text || 'โหลดข้อมูลล่วงหน้า...');
+  return fn().catch(function(){}).finally(function(){ hideBgLoading(); });
+}
+
+function prefetchForPage(page) {
+  if (!AUTH.token) return;
+
+  if (page === 'receive') {
+    _prefetchOnce('items', 'โหลดรายการวัสดุ...', function() {
+      return callAPI('getItems', AUTH.token).then(function(res){ if (res && res.data) { _itemsData = res.data; _itemsCacheTime = Date.now(); } });
+    });
+    _prefetchOnce('receive', 'โหลดข้อมูลรับเข้า...', function() {
+      return callAPI('getReceives', AUTH.token, {}).then(function(res){ if (res && res.data) { _receiveData = res.data; _receiveCacheTime = Date.now(); } });
+    });
+  } else if (page === 'withdraw' || page === 'approve') {
+    _prefetchOnce('items', 'โหลดรายการวัสดุ...', function() {
+      return callAPI('getItems', AUTH.token).then(function(res){ if (res && res.data) { _itemsData = res.data; _itemsCacheTime = Date.now(); } });
+    });
+    _prefetchOnce('withdrawals', 'โหลดข้อมูลการเบิก...', function() {
+      return callAPI('getWithdrawals', AUTH.token, { status:'all' }).then(function(res){ if (res && res.data) { _wdData = res.data; _wdCacheTime = Date.now(); } });
+    });
+  } else if (page === 'transactions' || page === 'reports') {
+    _prefetchOnce('transactions', 'โหลดประวัติเคลื่อนไหว...', function() {
+      return callAPI('getTransactions', AUTH.token, {}).then(function(res){ if (res && res.data) { _txData = res.data; _txCacheTime = Date.now(); } });
+    });
+  } else if (page === 'users' && AUTH.user && AUTH.user.role === 'admin') {
+    _prefetchOnce('users', 'โหลดข้อมูลผู้ใช้...', function() {
+      return callAPI('getUsers', AUTH.token).then(function(res){ if (res && res.data) _usersData = res.data; });
+    });
+  } else if (page === 'assets' || page === 'assetstatus' || page === 'assetmaintenance' || page === 'assetcommittees' || page === 'assetreports') {
+    _prefetchOnce('assets', 'โหลดทะเบียนครุภัณฑ์...', function() {
+      return callAPI('getAssets', AUTH.token).then(function(res){ if (res && res.data) _assetData = res.data; });
+    });
+    if (page === 'assetstatus') {
+      _prefetchOnce('assetStatusLogs', 'โหลดประวัติสถานะครุภัณฑ์...', function() { return callAPI('getAssetStatusLogs', AUTH.token).then(function(){}); });
+    }
+    if (page === 'assetmaintenance') {
+      _prefetchOnce('assetMaintenance', 'โหลดข้อมูลซ่อมบำรุง...', function() { return callAPI('getAssetMaintenance', AUTH.token).then(function(){}); });
+    }
+    if (page === 'assetcommittees') {
+      _prefetchOnce('assetCommittees', 'โหลดข้อมูลคณะกรรมการ...', function() { return callAPI('getAssetCommittees', AUTH.token).then(function(){}); });
+    }
+  }
+}
 
 function startBackgroundPrefetch() {
   if (_prefetchDone || !AUTH.token) return;
   _prefetchDone = true;
 
-  var needItems = !_itemsData || _itemsData.length === 0;
-  var needUsers = AUTH.user && AUTH.user.role === 'admin' && (!_usersData || _usersData.length === 0);
+  // โหลดข้อมูลชุดหลักหลัง login แล้วค่อยทยอยโหลดหน้าอื่นต่อ
+  prefetchForPage('receive');
+  prefetchForPage('withdraw');
+  if (AUTH.user && AUTH.user.role === 'admin') prefetchForPage('users');
 
-  if (!needItems && !needUsers) return;
+  setTimeout(function(){ prefetchForPage('transactions'); }, 500);
+  setTimeout(function(){ prefetchForPage('assets'); }, 900);
 
-  // โหลด parallel ทันที
-  var promises = [];
-  if (needItems) {
-    promises.push(
-      callAPI('getItems', AUTH.token).then(function(res) {
-        if (res && res.data) { _itemsData = res.data; _itemsCacheTime = Date.now(); }
-      }).catch(function(){})
-    );
-  }
-  if (needUsers) {
-    promises.push(
-      callAPI('getUsers', AUTH.token).then(function(res) {
-        if (res && res.data) _usersData = res.data;
-      }).catch(function(){})
-    );
-  }
-
-  if (promises.length > 0) {
-    showBgLoading('โหลดข้อมูลล่วงหน้า...');
-    Promise.all(promises).then(function() {
-      hideBgLoading();
-      // อัปเดต badge หลัง prefetch
-      if (_itemsData.length > 0) updateLowStockBadge(_itemsData);
-    }).catch(function() { hideBgLoading(); });
-  }
+  if (_itemsData.length > 0) updateLowStockBadge(_itemsData);
 }
 
 function _bgPrefetchUsers() {
@@ -381,6 +412,10 @@ function refreshPage() {
   _assetData = [];
   _pageCache = {};
   _prefetchDone = false;
+  _prefetchFlags = {
+    items:false, users:false, receive:false, withdrawals:false, transactions:false,
+    assets:false, assetStatusLogs:false, assetMaintenance:false, assetCommittees:false
+  };
   if (_currentPage) loadPage(_currentPage);
 }
 
@@ -495,6 +530,9 @@ function loadPage(page) {
   else if (page === 'assetmaintenance')   renderAssetMaintenance();
   else if (page === 'assetcommittees')    renderAssetCommittees();
   else if (page === 'assetreports')       renderAssetReports();
+
+  // พรีโหลดข้อมูลของหน้าที่ผู้ใช้กำลังจะใช้งานต่อแบบเบื้องหลัง
+  prefetchForPage(page);
 }
 
 function toggleSidebar() {
