@@ -283,9 +283,10 @@ function submitForgotPassword() {
 // ===== APP INIT =====
 function initApp(options) {
   var silent = options && options.silent;
-  if (!silent) showLoading('กำลังตรวจสอบสิทธิ์...');
   var slowHintTimer = null;
-  if (silent) {
+  if (!silent) {
+    showLoading('กำลังตรวจสอบสิทธิ์...');
+  } else {
     slowHintTimer = setTimeout(function() {
       if (_currentPage !== 'dashboard') return;
       showBgLoading('กำลังกู้คืนเซสชัน...');
@@ -319,25 +320,44 @@ function initApp(options) {
     }
   }
 
-  callAPI('validateSession', AUTH.token).then(function(session) {
+  function _withTimeout(promise, timeoutMs) {
+    return new Promise(function(resolve, reject) {
+      var done = false;
+      var t = setTimeout(function() {
+        if (done) return;
+        done = true;
+        reject(new Error('validate timeout'));
+      }, timeoutMs);
+      promise.then(function(v){ if (done) return; done = true; clearTimeout(t); resolve(v); })
+             .catch(function(e){ if (done) return; done = true; clearTimeout(t); reject(e); });
+    });
+  }
+
+  function _validateOnce() {
+    return _withTimeout(callAPI('validateSession', AUTH.token), 8000);
+  }
+
+  _validateOnce().then(function(session) {
     if (session) { _doneInitLoading(); finishInitWithSession(session); return; }
 
     // กันกรณีเครือข่าย/Apps Script สะดุดครั้งเดียวตอน refresh
     setTimeout(function() {
-      callAPI('validateSession', AUTH.token).then(function(session2) {
+      _validateOnce().then(function(session2) {
         _doneInitLoading();
         if (session2) { finishInitWithSession(session2); return; }
         AUTH.clear();
         showLoginPage();
       }).catch(function() {
         _doneInitLoading();
-        showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
+        if (silent) showError('กู้คืนเซสชันไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่');
+        else showError('ตรวจสอบ session ไม่สำเร็จ กรุณาลองรีเฟรชอีกครั้ง');
         showLoginPage();
       });
     }, 250);
   }).catch(function() {
     _doneInitLoading();
-    showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+    if (silent) showError('กู้คืนเซสชันใช้เวลานานเกินไป กรุณาเข้าสู่ระบบใหม่');
+    else showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
     showLoginPage();
   });
 }
@@ -539,6 +559,7 @@ function startDashboardWidgetAutoRefresh() {
 
   _dashboardWidgetTimer = setInterval(function() {
     if (_currentPage !== 'dashboard') { stopDashboardWidgetAutoRefresh(); return; }
+    if (document.visibilityState === 'hidden') return;
 
     // รีเฟรชเฉพาะ widget โดยไม่ rerender ทั้งหน้า
     callAPI('getDashboardStats', AUTH.token).then(function(res) {
@@ -1022,12 +1043,18 @@ var ITEMS_STALE_TTL = 30 * 60 * 1000;
 
 // Reset cache เมื่อ tab กลับมา active แต่ให้ stale data แสดงก่อน
 document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible' && _itemsData.length > 0) {
-    var age = Date.now() - _itemsCacheTime;
-    // ถ้าข้อมูลเก่ากว่า 5 นาที ให้ refresh ใน background (ไม่บล็อก UI)
-    if (age > ITEMS_CACHE_TTL) {
-      _revalidateItemsInBackground();
+  if (document.visibilityState === 'visible') {
+    if (_currentPage === 'dashboard') startDashboardWidgetAutoRefresh();
+    if (_itemsData.length > 0) {
+      var age = Date.now() - _itemsCacheTime;
+      // ถ้าข้อมูลเก่ากว่า 5 นาที ให้ refresh ใน background (ไม่บล็อก UI)
+      if (age > ITEMS_CACHE_TTL) {
+        _revalidateItemsInBackground();
+      }
     }
+  } else {
+    // ลดงานเบื้องหลังเมื่อ tab ไม่ได้ใช้งาน
+    stopDashboardWidgetAutoRefresh();
   }
 });
 
